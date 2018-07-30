@@ -10,4 +10,3 @@ def socket_server():
     server.start()
     yield server
     server.join(2)
-
