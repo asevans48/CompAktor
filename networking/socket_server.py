@@ -199,7 +199,7 @@ def package_dict_as_json_string(message):
     return "{}:::{}".format(str(len(message)), message).encode()
 
 
-def start_socket_server(host, port, max_threads=1000):
+def create_socket_server(host, port, max_threads=1000):
     """
     Get the gevent thread containing the running server
 
@@ -214,3 +214,33 @@ def start_socket_server(host, port, max_threads=1000):
     server = SocketServer(host, port, max_threads)
     server.start()
     return server
+
+
+if __name__ == "__main__":
+    host = '127.0.0.1'
+    port = 12000
+    socket_server = create_socket_server(host, port)
+    socket_server.signal_queue.get(timeout=30)
+    print('Starting Test')
+    try:
+        import socket
+        for i in range(0, 100):
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                sock.connect((host, port))
+                msg = package_message('Hello')
+                sock.send(msg)
+            finally:
+                sock.close()
+
+        i = 0
+        while socket_server.message_queue.empty() is False:
+            i += 1
+            message = socket_server.message_queue.get(timeout=30)
+            assert (message is not None)
+            assert (type(message) is dict)
+            assert (message.get('data', None) is not None)
+            assert (message['data'].decode() == 'Hello')
+    finally:
+        socket_server.stop_server()
+        socket_server.signal_queue.get(timeout=30)

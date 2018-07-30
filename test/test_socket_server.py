@@ -4,7 +4,7 @@ import socket
 
 from django.core.serializers import json
 
-from networking.socket_server import start_socket_server, ServerStarted, \
+from networking.socket_server import create_socket_server, ServerStarted, \
     package_dict_as_json_string, package_message, ServerStopped
 
 HOST = '127.0.0.1'
@@ -13,7 +13,7 @@ PORT = 12000
 
 @pytest.fixture
 def socket_server():
-    server = start_socket_server(HOST, PORT, 2)
+    server = create_socket_server(HOST, PORT, 2)
     return server
 
 
@@ -81,19 +81,34 @@ def test_whitespace_and_chars_string_server_comms(socket_server):
 def test_hundred_string_server_comms(socket_server):
     for i in range(0, 100):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((HOST, PORT))
-        msg = package_message(msg)
-        sock.send(msg)
-    message = socket_server.message_queue.get(timeout=30)
-    assert (message is not None)
-    assert (type(message) is dict)
-    assert (message.get('data', None) is not None)
-    assert (message['data'] == ' hello @!$*#( everybody ')
+        try:
+            sock.connect((HOST, PORT))
+            msg = package_message('Hello')
+            sock.send(msg)
+        finally:
+            sock.close()
+
+    i = 0
+    while socket_server.message_queue.empty() is False:
+        i += 1
+        message = socket_server.message_queue.get(timeout=30)
+        assert (message is not None)
+        assert (type(message) is dict)
+        assert (message.get('data', None) is not None)
+        assert (message['data'].decode() == 'Hello')
 
 
 @pytest.mark.order7
 def test_json_server_comms(socket_server):
-    pass
+    mdict = {'a': 1}
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock = sock.connect((HOST, PORT))
+        msg = package_dict_as_json_string(mdict)
+        sock.send(msg)
+    finally:
+        sock.close()
+    socket_server.message_queue.get(timeout=30)
 
 
 @pytest.mark.order8

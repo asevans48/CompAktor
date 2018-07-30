@@ -14,7 +14,7 @@ class ActorAddress():
     """
     The ActorAddress object
     """
-    def __init__(self, address, host='localhost'):
+    def __init__(self, address, host='localhost', port=12000):
         """
         Constructor
 
@@ -25,9 +25,10 @@ class ActorAddress():
         """
         self.address = address
         self.host = host
+        self.port = port
 
     def __repr__(self):
-        return 'ActorAddress :: {} @ {}'.format(self.address, self.host)
+        return 'ActorAddress :: {} @ {}:{}'.format(self.address, self.host, self.port)
 
 
 def get_address():
