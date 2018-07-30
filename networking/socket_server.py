@@ -5,18 +5,20 @@ The socket server.  This handles all remote communications.
 """
 
 import atexit
-from multiprocessing import Queue
+import json
 from threading import Thread
 
 import gevent
 from gevent import monkey
+from gevent.queue import Queue
 from gevent import signal
 from gevent.event import Event
 from gevent.pool import Pool
 from gevent.server import StreamServer
-
-MAX_THREADS = 10000
 monkey.patch_all()
+
+
+class LengthStringRequiredException(object): pass
 
 
 class ServerNotStartedException(Exception): pass
@@ -33,7 +35,7 @@ class SocketServer(Thread):
     The socket server which extends Thread.
     """
 
-    def __init__(self, host, port, signal_queue=Queue(), message_queue=Queue()):
+    def __init__(self, host, port, max_threads=1000, signal_queue=Queue(), message_queue=Queue()):
         """
         The constructor.
 
@@ -41,32 +43,107 @@ class SocketServer(Thread):
         :type host:  str
         :param port:  The port for the server
         :type port:  int
+        :param max_threads:  Maximum number of connection threads default is 1000
+        :type max_threads:  int
+        :param signal_queue:  The underlying signal queue which has a default
+        :type signal_queue:  gevent.queue.Queue
+        :param message_queue:  The underlying message queue
+        :type mssage_queue:  gevent.queue.Queue
         """
         Thread.__init__(self)
+        self.is_running = False
         self.__server = None
         self.host = host
         self.port = port
         self.evt = Event()
         self.signal_queue = signal_queue
         self.message_queue = message_queue
+        self._socket_timeout = 10
+        self.__max_threads = max_threads
 
-    def handle_socket(self, socket):
-        chunk_size = 512 * 1024  # how many bytes we want to process each loop
-        while True:
-            data = ''
-            while len(data) < chunk_size:
-                data += socket.recv(chunk_size - len(data))
-            if not data:
-                break
-            gevent.sleep(5)
-        socket.close()
+    @property
+    def socket_timeout(self):
+        return self._socket_timeout
+
+    @socket_timeout.setter
+    def socket_timeout(self, timeout):
+        self._socket_timeout = timeout
+
+    def handle_socket(self, socket, address):
+        """
+        Handle an initial socket. Expects length as first part of string.
+        :param socket:  The socket to handle
+        :type socket:  gevent.socket
+        """
+        length = -1
+        data = b''
+        socket.settimeout(self._socket_timeout)
+        while len(data) - length > 0:
+            if length > 0 and len(data) - length > 0:
+                new_data = socket.recv(1024)
+                if new_data:
+                    data += new_data
+                else:
+                    break
+            elif length == -1:
+                ldata = socket.recv(1024)
+                if not ldata:
+                    self.signal_queue.put(LengthStringRequiredException())
+                    break
+                try:
+                    lstr = ldata.decode('utf-8')
+                    lstr = lstr.split(':::', maxsplit=1)
+                    length = int(lstr[0].strip())
+                    if len(lstr) > 0:
+                        data += lstr[1].encode()
+                except ValueError as e:
+                    print('Received Non-Length String')
+                    self.signal_queue.put(LengthStringRequiredException())
+                except Exception as e:
+                    self.signal_queue.put(e)
+            gevent.sleep(0)
+        out_message = {'data': data, 'address': address}
+        self.message_queue.put(out_message)
 
     def stop_server(self):
+        """
+        Stop a running server.  Sets the event
+        """
         try:
             self.evt.set()
-            self.signal_queue.put(ServerStopped())
         except Exception as e:
             self.signal_queue.put(e)
+
+    def _stop_server(self, timeout=None):
+        """
+        Stop a running server
+        :param timeout:  Time to wait for the server to stop
+        :type timeout:  int
+        :return:  an appropriate return message
+        :rtype:  ServerStopped
+        """
+        failed = False
+        if self.is_running:
+            try:
+                if timeout:
+                    self.__server.stop(timeout)
+                else:
+                    self.__server.stop()
+                self.is_running = False
+                failed = True
+            except Exception as e:
+                self.signal_queue.put(e)
+        if failed is False:
+            self.signal_queue.put(ServerStopped())
+
+    def _setup_termination(self):
+        """
+        Setup handlers for termination
+        """
+        gevent.signal(signal.SIGQUIT, self.evt.set)
+        gevent.signal(signal.SIGTERM, self.evt.set)
+        gevent.signal(signal.SIGINT, self.evt.set)
+        atexit.register(self._stop_server)
 
     def run(self):
         """
@@ -76,27 +153,53 @@ class SocketServer(Thread):
         :param port:  The server port
         :type port:  int
         """
-        evt = Event()
         try:
-            print("Creating Server")
             def handle_connect(socket, address):
-                self.handle_socket(socket)
-            pool = Pool(MAX_THREADS)
+                self.handle_socket(socket, address)
+            pool = Pool(self.__max_threads)
             self.__server = StreamServer((self.host, self.port), handle_connect, spawn=pool)
             self.__server.start()
-            gevent.signal(signal.SIGQUIT, self.evt.set)
-            gevent.signal(signal.SIGTERM, self.evt.set)
-            gevent.signal(signal.SIGINT, self.evt.set)
+            self._setup_termination()
+            self.is_running = True
             self.signal_queue.put(ServerStarted())
-            atexit.register(self.__server.stop)
             self.evt.wait()
-            self.__server.stop(10)
+            self._stop_server(10)
         except Exception as e:
             self.signal_queue.put(e)
         finally:
             self.signal_queue.put(ServerStopped())
 
-def start_socket_server(host, port):
+
+def package_message(message):
+    """
+    Package a string message
+
+    :param message:  The message to package
+    :type message:  str
+    :return:  a bytes like message with appropriate length
+    :rtype:  bytes
+    """
+    if type(message) is not str:
+        raise ValueError('String Message Required in package_message')
+    return "{}:::{}".format(str(len(message)),message).encode()
+
+
+def package_dict_as_json_string(message):
+    """
+    Package a dictionary as json string in a byte array.
+
+    :param message:  The message to package
+    :type message:  dict
+    :return:  Json string in a byte array
+    :rtype:  bytes
+    """
+    if type(message) is not dict:
+        raise ValueError('Dict required in package_dict_as_json')
+    msg = json.dumps(message)
+    return "{}:::{}".format(str(len(message)), message).encode()
+
+
+def start_socket_server(host, port, max_threads=1000):
     """
     Get the gevent thread containing the running server
 
@@ -104,8 +207,10 @@ def start_socket_server(host, port):
     :type host:  str
     :param port:  The server port
     :type port:  int
+    :param max_threads:  Maximum number of threads to start
+    :type max_threads:  int
     :return:  threading.Thread
     """
-    sthread = SocketServer(host, port)
-    sthread.start()
-    return sthread
+    server = SocketServer(host, port, max_threads)
+    server.start()
+    return server
