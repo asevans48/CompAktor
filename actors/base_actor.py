@@ -1,24 +1,31 @@
-import asyncio
+"""
+The base actor
+
+@author aevans
+"""
 from enum import Enum
 
 import gevent
-import uvloop
 from gevent.queue import Queue
 
 from actors.addressing import get_address
 from pools.asyncio_work_pool import AsyncioWorkPool
+from pools.greenlet_pool import GreenletPool
+from pools.multiproc_pool import MultiProcPool
 
 
 class WorkPoolType(Enum):
     ASNYCIO = 1
-
+    GREENLET = 2
+    PROCESS = 3
+    NO_POOL = 4
 
 class BaseActor(gevent.Greenlet):
     """
     The base actor.
     """
 
-    def __init__(self, work_pool_type=WorkPoolType.ASYNCIO):
+    def __init__(self, work_pool_type=WorkPoolType.ASYNCIO, max_workers=100):
         """
         The constructor which initializes the greenlet thread.
         """
@@ -26,8 +33,11 @@ class BaseActor(gevent.Greenlet):
         self.myAddress = get_address()
         self.work_pool = None
         if work_pool_type == WorkPoolType.ASNYCIO:
-            asyncio.set_event_loop(uvloop.new_event_loop())
-            self.work_pool = AsyncioWorkPool()
+            self.work_pool = AsyncioWorkPool(max_workers=max_workers)
+        elif work_pool_type == WorkPoolType.GREENLET:
+            self.work_pool = GreenletPool(max_workers=max_workers)
+        elif work_pool_type == WorkPoolType.PROCESS:
+            self.work_pool = MultiProcPool(max_workers=max_workers)
         gevent.Greenlet.__init__(self)
 
     def receive(self, message):
