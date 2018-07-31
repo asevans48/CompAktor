@@ -30,9 +30,9 @@ class GreenletPool(BasePool):
         :type call_back:  func
         :return:  A greenlet thread
         """
-        return self.pool.apply_async(func, args, call_back)
+        return self.pool.apply_async(func, args, kwargs, call_back)
 
-    def close_pool(self, timeout=None):
+    def close(self, timeout=None):
         """
         Close the running pool
 

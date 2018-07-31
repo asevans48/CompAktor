@@ -1,5 +1,7 @@
 
 import asyncio
+import atexit
+import functools
 
 import uvloop
 
@@ -21,8 +23,8 @@ class AsyncioWorkPool(BasePool):
         :type max_workers:  int
         """
         self.event_loop = event_loop
-        self.queue = asyncio.Queue()
         asyncio.set_event_loop(event_loop)
+        self.queue = asyncio.Queue()
         self.num_workers = max_workers
         self.__workers = []
         for i in range(0, max_workers):
@@ -35,12 +37,16 @@ class AsyncioWorkPool(BasePool):
         """
         while True:
             future, task = await self.queue.get()
-            if task is POISONPILL:
-                break
-            result = await asyncio.wait_for(task, None, loop=self.event_loop)
-            future.set_result(result)
+            try:
+                if task is POISONPILL:
+                    future.set_result(True)
+                    break
+                result = await asyncio.wait_for(task, None, loop=self.event_loop)
+                future.set_result(result)
+            except Exception as e:
+                future.set_result(e)
 
-    def submit(self, coroutine, args=None, kwargs=None, callback=None):
+    def submit(self, coroutine, args=None, kwargs=None, callback=None, callback_kwargs=None):
         """
         Submit a coroutine to the pool
         :param coroutine:  The coroutine to submit
@@ -56,7 +62,8 @@ class AsyncioWorkPool(BasePool):
         """
         future = asyncio.Future(loop=self.event_loop)
         if callback:
-            future.add_done_callback(callback)
+            if callback_kwargs:
+                future.add_done_callback(functools.partial(callback, kwargs=callback_kwargs))
         task = asyncio.get_event_loop().create_task(coroutine(args, kwargs))
         self.queue.put_nowait((future, task))
         return (future, task)
@@ -68,4 +75,7 @@ class AsyncioWorkPool(BasePool):
         :type timeout:  int
         """
         for worker in self.__workers:
-            self.queue.put((None, POISONPILL))
+            future = self.event_loop.create_future()
+            self.queue.put_nowait((future, POISONPILL))
+            self.event_loop.run_until_complete(future)
+        self.event_loop.close()
