@@ -24,16 +24,20 @@ from logging_handler import logging
 monkey.patch_all()
 
 
-class LengthStringRequiredException(object): pass
+class LengthStringRequiredException(object):
+    pass
 
 
-class ServerNotStartedException(Exception): pass
+class ServerNotStartedException(Exception):
+    pass
 
 
-class ServerStarted(object): pass
+class ServerStarted(object):
+    pass
 
 
-class ServerStopped(object): pass
+class ServerStopped(object):
+    pass
 
 
 class SocketServerSecurity(object):
@@ -41,7 +45,7 @@ class SocketServerSecurity(object):
     def __init__(self):
         self.__key = bytes("ctv4eys984cavpavt5snldbkrw3".encode('utf-8'))
         self.hashfunction = hashlib.sha256
-        self.__hashsize = 256 / 8  # sha1 has 160 bits
+        self.__hashsize = 256 / 8
         self.__magic = 'sendreceive'
         self.buffer = 8192
 
@@ -60,7 +64,14 @@ class SocketServer(Thread):
     The socket server which extends Thread.
     """
 
-    def __init__(self, host, port, max_threads=1000, signal_queue=Queue(), message_queue=Queue(), security=SocketServerSecurity()):
+    def __init__(
+            self,
+            host,
+            port,
+            max_threads=1000,
+            signal_queue=Queue(),
+            message_queue=Queue(),
+            security=SocketServerSecurity()):
         """
         The constructor.
 

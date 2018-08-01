@@ -85,7 +85,6 @@ class ActorRegistry(object):
                 if child_address.address in actor.children:
                     actor.children.remove(child_address.address)
 
-
     def set_actor_status(self, actor_address, status):
         """
         Set the current actor status.
@@ -97,7 +96,6 @@ class ActorRegistry(object):
         """
         if self.registry.get(actor_address.address, None):
             self.registry[actor_address.address]['status'] = status
-
 
     def remove_actor(self, actor_address, terminate=True):
         """

@@ -4,6 +4,7 @@ The convention leader.
 @author aevans
 """
 
+
 class SetConventionLeader(object):
 
     def __init__(self, actor_address):

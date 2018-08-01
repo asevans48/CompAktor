@@ -14,6 +14,27 @@ class ActorCleanup(object):
         self.actor_address = actor_address
 
 
+class CreateActor(object):
+
+    def __init__(self, actor_class, actor_config, parent_address, system_address):
+        """
+        A message used for the creation of an actor on a system.
+
+        :param actor_class:  The class for the actor to be created
+        :type actor_class:  object
+        :param actor_config:  The actor configuration
+        :type actor_config:  ActorConfig
+        :param parent_address:  The address of the parent
+        :type parent_address:  ActorAddreses
+        :param system_address:  The address of the system
+        :type system_address:  ActorAddress
+        """
+        self.actor_class = actor_class
+        self.actor_config = actor_config
+        self.parent_address = parent_address
+        self.system_address = system_address
+
+
 class RegisterActor(object):
     """
     Message for registering an actor.
