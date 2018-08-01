@@ -165,20 +165,7 @@ class SocketServer(Thread):
         else:
             accepted = False
         omessage = json.loads(data.decode())
-        object = get_object_from_message(omessage)
-        target = object.target
-        if self.registry and target:
-            # pass on to appropriate actor if registry is specified
-            sender_addr = get_message_sender(omessage)
-            if object.sender:
-                sender_addr = object.sender
-            while self.__registry.locked():
-                gevent.sleep(1)
-            if self.__registry.get(target.address, None):
-                self.__registry[target.address]['']
-        else:
-            # send to socket server message queue otherwise
-            self.message_queue.put(omessage)
+        self.message_queue.put(omessage)
 
     def stop_server(self):
         """
