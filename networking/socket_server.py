@@ -1,6 +1,6 @@
 """
 The socket server.  This handles all remote communications.
-https://gist.github.com/goncalopp/4044625
+
 @author aevans
 """
 
