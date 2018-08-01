@@ -10,11 +10,14 @@ from threading import Thread
 
 import gevent
 from gevent import monkey
-from gevent.queue import Queue
 from gevent import signal
 from gevent.event import Event
 from gevent.pool import Pool
+from gevent.queue import Queue
 from gevent.server import StreamServer
+
+from logging_handler import logging
+
 monkey.patch_all()
 
 
@@ -97,7 +100,7 @@ class SocketServer(Thread):
                     if len(lstr) > 0:
                         data += lstr[1].encode()
                 except ValueError as e:
-                    print('Received Non-Length String')
+                    logging.log_error('Received Non-Length String')
                     self.signal_queue.put(LengthStringRequiredException())
                 except Exception as e:
                     self.signal_queue.put(e)
@@ -217,30 +220,34 @@ def create_socket_server(host, port, max_threads=1000):
 
 
 if __name__ == "__main__":
-    host = '127.0.0.1'
-    port = 12000
-    socket_server = create_socket_server(host, port)
-    socket_server.signal_queue.get(timeout=30)
-    print('Starting Test')
     try:
-        import socket
-        for i in range(0, 100):
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            try:
-                sock.connect((host, port))
-                msg = package_message('Hello')
-                sock.send(msg)
-            finally:
-                sock.close()
-
-        i = 0
-        while socket_server.message_queue.empty() is False:
-            i += 1
-            message = socket_server.message_queue.get(timeout=30)
-            assert (message is not None)
-            assert (type(message) is dict)
-            assert (message.get('data', None) is not None)
-            assert (message['data'].decode() == 'Hello')
-    finally:
-        socket_server.stop_server()
+        host = '127.0.0.1'
+        port = 12000
+        socket_server = create_socket_server(host, port)
         socket_server.signal_queue.get(timeout=30)
+        logging.log_info('Starting Test')
+        try:
+            import socket
+            for i in range(0, 100):
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                try:
+                    sock.connect((host, port))
+                    msg = package_message('Hello')
+                    sock.send(msg)
+                finally:
+                    sock.close()
+
+            i = 0
+            while socket_server.message_queue.empty() is False:
+                i += 1
+                message = socket_server.message_queue.get(timeout=30)
+                assert (message is not None)
+                assert (type(message) is dict)
+                assert (message.get('data', None) is not None)
+                assert (message['data'].decode() == 'Hello')
+        finally:
+            logging.log_info('Terminating Server')
+            socket_server.stop_server()
+            socket_server.signal_queue.get(timeout=30)
+    except Exception as e:
+        logging.log_error()

@@ -20,17 +20,31 @@ class WorkPoolType(Enum):
     PROCESS = 3
     NO_POOL = 4
 
+
+class ActorConfig(object):
+    global_name=None
+    host=None
+    port=0
+    work_pool_type=WorkPoolType.ASNYCIO
+    max_workers=100
+    mailbox=Queue()
+
+
 class BaseActor(gevent.Greenlet):
     """
     The base actor.
     """
 
-    def __init__(self, work_pool_type=WorkPoolType.ASYNCIO, max_workers=100):
+    def __init__(self, actor_config):
         """
         The constructor which initializes the greenlet thread.
         """
-        self.inbox = Queue()
+        self.inbox = actor_config.mailbox
+        self.host = actor_config.host
+        self.port = actor_config.port
         self.myAddress = get_address()
+        work_pool_type = actor_config.work_pool_type
+        max_workers = actor_config.max_workers
         self.work_pool = None
         if work_pool_type == WorkPoolType.ASNYCIO:
             self.work_pool = AsyncioWorkPool(max_workers=max_workers)
