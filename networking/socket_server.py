@@ -73,9 +73,7 @@ class SocketServer(Thread):
             max_threads=1000,
             signal_queue=Queue(),
             message_queue=Queue(),
-            security=SocketServerSecurity(),
-            registry=None,
-            registry_lock=None):
+            security=SocketServerSecurity()):
         """
         The constructor.
 
@@ -103,8 +101,6 @@ class SocketServer(Thread):
         self.message_queue = message_queue
         self._socket_timeout = 10
         self.__max_threads = max_threads
-        self.__registry = registry
-        self.__registry_lock = lock.Semaphore
 
     @property
     def socket_timeout(self):
