@@ -213,7 +213,7 @@ class SocketServer(Thread):
             self.signal_queue.put(ServerStopped())
 
 
-def create_socket_server(host, port, max_threads=1000):
+def create_socket_server(host, port, max_threads=1000, security_config=SocketServerSecurity()):
     """
     Get the gevent thread containing the running server
 
@@ -223,8 +223,10 @@ def create_socket_server(host, port, max_threads=1000):
     :type port:  int
     :param max_threads:  Maximum number of threads to start
     :type max_threads:  int
+    :param security_config:  The security configuration
+    :type security_config:  SocketServerSecurity
     :return:  threading.Thread
     """
-    server = SocketServer(host, port, max_threads)
+    server = SocketServer(host, port, max_threads, security=security_config)
     server.start()
     return server

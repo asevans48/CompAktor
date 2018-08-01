@@ -17,6 +17,7 @@ class ActorStatus(Enum):
 class ActorRegistry(object):
     """
     A basic actor registry. The registry maintains basic actor information.
+    Solving the reader writer problem is crucial here.
 
     Actors can have 1 parent
     Actors can have multiple children
@@ -104,3 +105,16 @@ class ActorRegistry(object):
         """
         if self.registry.get(actor_address.address, None):
             self.registry.pop(actor_address.address)
+
+    def get_actor(self, actor_address, default=None):
+        """
+        Get the required actor.
+
+        :param actor_address:  The actor address
+        :type actor_address:  ActorAddress
+        :return:  The discovered actor information
+        :param default:  Any default to return on failed discovery
+        :type default:  object
+        :rtype:  dict
+        """
+        return self.registry.get(actor_address.address, default)

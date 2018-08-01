@@ -4,13 +4,14 @@ The base actor
 @author aevans
 """
 from enum import Enum
+from multiprocessing import Process
+from multiprocessing import Queue
 
 import gevent
-from gevent.queue import Queue
+from gevent import monkey
 
 from actors.address.addressing import get_address
 from messages.poison import POISONPILL
-from networking.utils import send_message_to_actor
 from pools.asyncio_work_pool import AsyncioWorkPool
 from pools.greenlet_pool import GreenletPool
 from pools.multiproc_pool import MultiProcPool
@@ -32,15 +33,22 @@ class ActorConfig(object):
     mailbox=Queue()
 
 
-class BaseActor(gevent.Greenlet):
+class BaseActor(Process):
     """
     The base actor.
     """
 
-    def __init__(self, actor_config):
+    def __init__(self, actor_config, system_queue):
         """
-        The constructor which initializes the greenlet thread.
+        Constructor
+
+        :param actor_config:  The actor configuration
+        :type actor_config:  ActorConfig
+        :param actor_system:  The actor system to use (greenlet based)
+        :type actor_system:  ActorSystem
         """
+        monkey.patch_all()
+        self.system_queue = system_queue
         self.inbox = actor_config.mailbox
         self.host = actor_config.host
         self.port = actor_config.port
@@ -56,7 +64,6 @@ class BaseActor(gevent.Greenlet):
             self.work_pool = GreenletPool(max_workers=max_workers)
         elif work_pool_type == WorkPoolType.PROCESS:
             self.work_pool = MultiProcPool(max_workers=max_workers)
-        gevent.Greenlet.__init__(self)
 
     def send(self, target, message):
         """
