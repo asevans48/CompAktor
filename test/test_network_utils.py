@@ -1,10 +1,9 @@
 import json
-import socket
 
 import pytest
 
-from actors.addressing import ActorAddress
-from networking.socket_server import SocketServer, create_socket_server
+from actors.address.addressing import ActorAddress
+from networking.socket_server import create_socket_server
 from networking.utils import send_message_to_actor, send_json_to_actor
 
 

@@ -8,7 +8,8 @@ from enum import Enum
 import gevent
 from gevent.queue import Queue
 
-from actors.addressing import get_address
+from actors.address.addressing import get_address
+from messages.poison import POISONPILL
 from networking.utils import send_message_to_actor, send_json_to_actor
 from pools.asyncio_work_pool import AsyncioWorkPool
 from pools.greenlet_pool import GreenletPool
@@ -84,10 +85,13 @@ class BaseActor(gevent.Greenlet):
 
     def _run(self):
         """"
-        Run the actor
+        Run the actor.  Continues to receive until a poisson pill is obtained
         """
         self.running = True
         while self.running:
             message = self.inbox.get()
-            self.receive(message)
-            gevent.sleep(0)
+            if type(message) is POISONPILL:
+                self.running=False
+            else:
+                self.receive(message)
+                gevent.sleep(0)

@@ -5,10 +5,8 @@ import functools
 
 import uvloop
 
+from messages.poison import POISONPILL
 from pools.base_pool import BasePool
-
-
-POISONPILL = object()
 
 
 class AsyncioWorkPool(BasePool):
