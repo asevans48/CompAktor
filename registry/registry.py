@@ -3,8 +3,11 @@ Actor registry
 
 @author aevans
 """
-
+import traceback
 from enum import Enum
+
+from logging_handler import logging
+from logging_handler.logging import package_actor_message, package_error_message
 
 
 class ActorStatus(Enum):
@@ -30,12 +33,12 @@ class ActorRegistry(object):
         """
         self.registry = {}
 
-    def add_actor(self, actor, actor_address, actor_status):
+    def add_actor(self, actor_address, actor_status, actor_proc=None):
         """
         Adds the actor to the registry
 
-        :param actor:  The actor registry
-        :type actor:  BaseActor
+        :param actor_proc:  The actor process if applicable
+        :type actor_proc:  Process
         :param actor_address:   The actor address
         :type actor:  ActorAddress
         :param actor_status:  The status of the actor
@@ -45,8 +48,8 @@ class ActorRegistry(object):
             self.registry[actor_address.address] = {
                 'address': actor_address,
                 'children': [],
-                'actor': actor,
                 'parent': None,
+                'actor_proc': actor_proc,
                 'status': actor_status
             }
         else:
@@ -96,15 +99,30 @@ class ActorRegistry(object):
             self.registry[actor_address.address]['status'] = status
 
 
-    def remove_actor(self, actor_address):
+    def remove_actor(self, actor_address, terminate=True):
         """
         Remove an actor by address
 
         :param actor_address:  The actor address to remove
         :type actor_address:  ActorAddress
+        :param terminate:  Terminates an actor as possible
+        :type terminate:  boolean
+        :return:  Actor information
+        :rtype:  dict
         """
+        actor_inf = None
         if self.registry.get(actor_address.address, None):
-            self.registry.pop(actor_address.address)
+            actor_inf = self.registry.pop(actor_address.address)
+            if terminate:
+                proc = actor_inf['actor_proc']
+                if proc:
+                    try:
+                        proc.terminate()
+                        proc.join()
+                    except Exception as e:
+                        logger = logging.get_logger()
+                        message = package_error_message()
+                        logging.log_error(logger, message)
 
     def get_actor(self, actor_address, default=None):
         """

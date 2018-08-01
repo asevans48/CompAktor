@@ -27,7 +27,10 @@ class ActorSystem(object):
         :param security_config:  The security configuration
         :type security_config:  SocketServerSecurity
         """
+        self.convention_leader = None
+        self.is_convention_leader = False
         self.server = None
+        self.remote_systems = {}
         if system_config.host and system_config.port > 2000:
             self.server = create_socket_server(
                 system_config.host,
@@ -53,9 +56,11 @@ class ActorSystem(object):
     def create_actor(self, actor_class, parent=None):
         """
         Create an actor
-        :param actor_class:
-        :param parent:
-        :return:
+        :param actor_class:  The class of the actor
+        :type actor_class:  object
+        :param parent:  The parent actor if applicable
+        :return:  The started actor process with informations
+        :rtype
         """
         pass
 

@@ -25,6 +25,18 @@ class APMConfig(object):
     queue_size = 10
 
 
+def package_error_message():
+    """
+    Package the error message
+
+    :return:  The packaged message from traceback
+    :rtype:  str
+    """
+    message = traceback.format_exc()
+    message = package_actor_message(message)
+    return message
+
+
 def add_console_handler(logger, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'):
     """
     Add console handler
@@ -158,3 +170,17 @@ def log_warn(logger, msg, apm_client=None):
     logger.warn(msg)
     if apm_client:
         apm_client.capture_message(msg)
+
+
+def package_actor_message(actor_address, message):
+    """
+    Package a message from the actor on the system.
+
+    :param actor_address:  The actor address of the logging actor
+    :type actor_address:  ActorAddress
+    :param message:  The message to log
+    :type message:  str
+    :return:  The packaged message
+    :rtype:  str
+    """
+    return "{} ::: {}".format(actor_address.__repr__(), message)
