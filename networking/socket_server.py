@@ -1,11 +1,13 @@
 """
 The socket server.  This handles all remote communications.
-
+https://gist.github.com/goncalopp/4044625
 @author aevans
 """
 
 import atexit
-import json
+import base64
+import hashlib
+import hmac
 from threading import Thread
 
 import gevent
@@ -15,6 +17,8 @@ from gevent.event import Event
 from gevent.pool import Pool
 from gevent.queue import Queue
 from gevent.server import StreamServer
+
+import pickle
 
 from logging_handler import logging
 
@@ -33,12 +37,31 @@ class ServerStarted(object): pass
 class ServerStopped(object): pass
 
 
+class SocketServerSecurity(object):
+
+    def __init__(self):
+        self.__key = bytes("ctv4eys984cavpavt5snldbkrw3".encode('utf-8'))
+        self.hashfunction = hashlib.sha256
+        self.__hashsize = 256 / 8  # sha1 has 160 bits
+        self.__magic = 'sendreceive'
+        self.buffer = 8192
+
+    def get_key(self):
+        return self.__key
+
+    def get_hash_size(self):
+        return self.__hashsize
+
+    def get_magic(self):
+        return self.__magic
+
+
 class SocketServer(Thread):
     """
     The socket server which extends Thread.
     """
 
-    def __init__(self, host, port, max_threads=1000, signal_queue=Queue(), message_queue=Queue()):
+    def __init__(self, host, port, max_threads=1000, signal_queue=Queue(), message_queue=Queue(), security=SocketServerSecurity()):
         """
         The constructor.
 
@@ -54,6 +77,7 @@ class SocketServer(Thread):
         :type mssage_queue:  gevent.queue.Queue
         """
         Thread.__init__(self)
+        self.__security = security
         self.is_running = False
         self.__server = None
         self.host = host
@@ -81,6 +105,8 @@ class SocketServer(Thread):
         length = -1
         data = b''
         socket.settimeout(self._socket_timeout)
+        accepted = False
+        signature = None
         while len(data) - length > 0:
             if length > 0 and len(data) - length > 0:
                 new_data = socket.recv(1024)
@@ -95,18 +121,32 @@ class SocketServer(Thread):
                     break
                 try:
                     lstr = ldata.decode('utf-8')
-                    lstr = lstr.split(':::', maxsplit=1)
-                    length = int(lstr[0].strip())
-                    if len(lstr) > 0:
-                        data += lstr[1].encode()
+                    lstr = lstr.split(':::', maxsplit=4)
+                    if len(lstr) > 2:
+                        mpart = lstr[0]
+                        signature = lstr[1]
+                        length = int(lstr[2])
+                        if mpart != self.__security.get_magic():
+                            break
+                        accepted = True
+                    else:
+                        break
+                    if len(lstr) > 3:
+                        data += lstr[3].encode()
                 except ValueError as e:
                     logging.log_error('Received Non-Length String')
                     self.signal_queue.put(LengthStringRequiredException())
                 except Exception as e:
                     self.signal_queue.put(e)
             gevent.sleep(0)
-        out_message = {'data': data, 'address': address}
-        self.message_queue.put(out_message)
+        if accepted and signature:
+            sig2 = hmac.new(self.__security.get_key(), data, self.__security.hashfunction).digest()
+            sig2 = base64.b64encode(sig2).decode()
+            if sig2 != signature:
+                accepted = False
+        else:
+            accepted = False
+        self.message_queue.put(data.decode())
 
     def stop_server(self):
         """

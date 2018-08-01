@@ -10,7 +10,7 @@ from gevent.queue import Queue
 
 from actors.address.addressing import get_address
 from messages.poison import POISONPILL
-from networking.utils import send_message_to_actor, send_json_to_actor
+from networking.utils import send_message_to_actor
 from pools.asyncio_work_pool import AsyncioWorkPool
 from pools.greenlet_pool import GreenletPool
 from pools.multiproc_pool import MultiProcPool
@@ -67,12 +67,7 @@ class BaseActor(gevent.Greenlet):
         :type message:  object
         :return:
         """
-        if type(message) is str:
-            send_message_to_actor(message, target, self.myAddress)
-        elif type(message) is dict:
-            send_json_to_actor(message, target, self.myAddress)
-        else:
-            raise ValueError('Message Must Be Either String or Dict')
+        pass
 
     def receive(self, message):
         """
@@ -93,5 +88,5 @@ class BaseActor(gevent.Greenlet):
             if type(message) is POISONPILL:
                 self.running=False
             else:
-                self.receive(message)
+                self.receive(message.decode())
                 gevent.sleep(0)
