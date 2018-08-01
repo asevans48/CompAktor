@@ -33,24 +33,29 @@ class ActorRegistry(object):
         """
         self.registry = {}
 
-    def add_actor(self, actor_address, actor_status, actor_proc=None):
+    def add_actor(self, actor_address, actor_status, mailbox, actor_proc=None, parent=[]):
         """
         Adds the actor to the registry
 
         :param actor_proc:  The actor process if applicable
         :type actor_proc:  Process
         :param actor_address:   The actor address
-        :type actor:  ActorAddress
+        :type actor_address:  ActorAddress
         :param actor_status:  The status of the actor
         :type actor_status:  ActorStatus
+        :param mailbox:  The actor mailbox
+        :type mailbox:  multiprocessing.Queue
+        :param parent:  The parent to set
+        :type parent:  list
         """
         if self.registry.get(actor_address.address, None) is None:
             self.registry[actor_address.address] = {
                 'address': actor_address,
                 'children': [],
-                'parent': None,
+                'parent': parent,
                 'actor_proc': actor_proc,
-                'status': actor_status
+                'status': actor_status,
+                'mailbox': mailbox
             }
         else:
             raise ValueError('Registry Already Contains Actor')
@@ -70,6 +75,9 @@ class ActorRegistry(object):
                     actor = self.registry[parent_address.address]
                     if child_address.address not in actor.children:
                         actor.children.append(child_address.address)
+                    actor = self.registry[child_address]
+                    actor._parent = parent_address
+                    self.registry[child_address]['parent'] = parent_address
 
     def remove_child(self, parent_address, child_address):
         """
@@ -84,6 +92,8 @@ class ActorRegistry(object):
                 actor = self.registry[parent_address.address]
                 if child_address.address in actor.children:
                     actor.children.remove(child_address.address)
+                actor = self.registry[child_address]
+                actor['parent'] = None
 
     def set_actor_status(self, actor_address, status):
         """
@@ -111,16 +121,6 @@ class ActorRegistry(object):
         actor_inf = None
         if self.registry.get(actor_address.address, None):
             actor_inf = self.registry.pop(actor_address.address)
-            if terminate:
-                proc = actor_inf['actor_proc']
-                if proc:
-                    try:
-                        proc.terminate()
-                        proc.join()
-                    except Exception as e:
-                        logger = logging.get_logger()
-                        message = package_error_message()
-                        logging.log_error(logger, message)
 
     def get_actor(self, actor_address, default=None):
         """

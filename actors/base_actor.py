@@ -6,6 +6,7 @@ The base actor
 import atexit
 import socket
 import traceback
+from copy import copy, deepcopy
 from enum import Enum
 from multiprocessing import Process
 from multiprocessing import Queue
@@ -15,14 +16,15 @@ from gevent import monkey
 
 from logging_handler import logging
 from logging_handler.logging import package_error_message
-from messages.actor_maintenance import SetActorStatus, RegisterActor
+from messages.actor_maintenance import SetActorStatus, RegisterActor, StopActor
 from messages.poison import POISONPILL
+from messages.routing import Forward
 from networking.socket_server import SocketServerSecurity
 from networking.utils import package_message
 from pools.asyncio_work_pool import AsyncioWorkPool
 from pools.greenlet_pool import GreenletPool
 from pools.multiproc_pool import MultiProcPool
-from registry.registry import ActorStatus
+from registry.registry import ActorStatus, ActorRegistry
 
 
 class WorkPoolType(Enum):
@@ -57,7 +59,7 @@ class BaseActor(Process):
     The base actor.
     """
 
-    def __init__(self, actor_config, system_address, parent=None):
+    def __init__(self, actor_config, system_address, parent=[]):
         """
         Constructor
 
@@ -72,12 +74,13 @@ class BaseActor(Process):
         self.status = ActorStatus.SETUP
         self.config = actor_config
         self.__system_address = system_address
-        self.__parent = parent
+        self._parent = parent
         self.config.myAddress.host = self.host
         self.config.myAddress.port = self.port
         work_pool_type = self.config.work_pool_type
         max_workers = self.config.max_workers
         self.__work_pool = None
+        self.__child_registry = ActorRegistry()
         if work_pool_type == WorkPoolType.GREENLET:
             self.__work_pool = GreenletPool(
                 max_workers=max_workers)
@@ -91,7 +94,7 @@ class BaseActor(Process):
         Process.__init__(self)
 
     def _get_parent(self):
-        return self.__parent
+        return self._parent
 
     def _setup(self):
         """
@@ -122,9 +125,36 @@ class BaseActor(Process):
             message = logging.package_error_message()
             logging.log_error(logger, message)
         try:
+            child_keys = self.__child_registry.keys()
+            if len(child_keys):
+                for key in child_keys:
+                    child = self.__child_registry[key]
+                    try:
+                        message = StopActor(child['address'], self.config.myAddress)
+                        addr_chain = deepcopy(self._parent)
+                        addr_chain.append(child['address'])
+                        wrapper = Forward(
+                            message, addr_chain, child['address'], self.config.myAddress)
+                        child.mailbox.put(wrapper, timeout=30)
+                    except Exception as e:
+                        logger = logging.get_logger()
+                        message = package_error_message()
+                        logging.log_error(logger, message)
+                    finally:
+                        p = child['actor_proc']
+                        if p:
+                            p.terminate()
+                            p.join(timeout=15)
+        except Exception as e:
+            logger = logging.get_logger()
+            message = logging.package_error_message()
+            logging.log_error(logger, message)
+        try:
             message = SetActorStatus(
                 self.config.myAddress,
-                ActorStatus.STOPPED)
+                ActorStatus.STOPPED,
+                self.__system_address,
+                self.config.myAddress)
             self.send(self.__system_address, message)
         except Exception as e:
             logger = logging.get_logger()
@@ -136,15 +166,27 @@ class BaseActor(Process):
             actor_class = message.actor_class
             actor_config = message.actor_config
             parent_address = message.parent_address
-            system_address = message.system_address
-            if system_address is None:
+            if self.__system_address is None:
                 raise ValueError('System Not Provided')
-            actor = actor_class(actor_config, system_address, parent_address)
+            actor = actor_class(
+                actor_config, self.__system_address, parent_address)
             p = actor.start()
+            actor_parent = deepcopy(self._parent)
+            actor_parent.append(self.config.myAddress)
+            self.__child_registry.add_actor(
+                actor.config.myAddress,
+                ActorStatus.RUNNING,
+                actor.config.mailbox,
+                actor_proc=p,
+                parent=actor_parent)
             try:
                 actor_address = actor.config.myAddress
-                register = RegisterActor(actor_address, ActorStatus.RUNNING)
-                rval = self.send(system_address, register)
+                register = RegisterActor(
+                    actor_address,
+                    ActorStatus.RUNNING,
+                    self.__system_address,
+                    self.config.myAddress)
+                rval = self.send(self.__system_address, register)
                 if rval is False:
                     raise Exception('Failed to Register Actor')
             except Exception as e:
@@ -210,6 +252,17 @@ class BaseActor(Process):
         """
         pass
 
+    def __unpack_message(self, message):
+        """
+        Unpack the received message.
+
+        :param message:  The received message
+        :type message:  dict
+        :return: A tuple of the message and sender address
+        :rtype:  tuple
+        """
+
+
     def start(self):
         """"
         Run the actor.  Continues to receive until a poisson pill is obtained
@@ -221,7 +274,9 @@ class BaseActor(Process):
                 self.running = False
             else:
                 try:
-                    self.receive(message.decode())
+                    message = message.decode()
+                    message, sender = self.__unpack_message(message)
+                    self.receive(message)
                 except Exception as e:
                     logger = logging.get_logger()
                     message = package_error_message()

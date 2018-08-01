@@ -12,6 +12,7 @@ import json
 from threading import Thread
 
 import gevent
+from gevent import lock
 from gevent import monkey
 from gevent import signal
 from gevent.event import Event
@@ -20,6 +21,7 @@ from gevent.queue import Queue
 from gevent.server import StreamServer
 
 from logging_handler import logging
+from messages.utils import get_message_sender, get_object_from_message
 
 monkey.patch_all()
 
@@ -71,7 +73,9 @@ class SocketServer(Thread):
             max_threads=1000,
             signal_queue=Queue(),
             message_queue=Queue(),
-            security=SocketServerSecurity()):
+            security=SocketServerSecurity(),
+            registry=None,
+            registry_lock=None):
         """
         The constructor.
 
@@ -85,6 +89,8 @@ class SocketServer(Thread):
         :type signal_queue:  gevent.queue.Queue
         :param message_queue:  The underlying message queue
         :type mssage_queue:  gevent.queue.Queue
+        :param registry:  The registry for forwarding a message
+        :type registry:  dict
         """
         Thread.__init__(self)
         self.__security = security
@@ -97,6 +103,8 @@ class SocketServer(Thread):
         self.message_queue = message_queue
         self._socket_timeout = 10
         self.__max_threads = max_threads
+        self.__registry = registry
+        self.__registry_lock = lock.Semaphore
 
     @property
     def socket_timeout(self):
@@ -157,7 +165,20 @@ class SocketServer(Thread):
         else:
             accepted = False
         omessage = json.loads(data.decode())
-        self.message_queue.put(omessage)
+        object = get_object_from_message(omessage)
+        target = object.target
+        if self.registry and target:
+            # pass on to appropriate actor if registry is specified
+            sender_addr = get_message_sender(omessage)
+            if object.sender:
+                sender_addr = object.sender
+            while self.__registry.locked():
+                gevent.sleep(1)
+            if self.__registry.get(target.address, None):
+                self.__registry[target.address]['']
+        else:
+            # send to socket server message queue otherwise
+            self.message_queue.put(omessage)
 
     def stop_server(self):
         """
