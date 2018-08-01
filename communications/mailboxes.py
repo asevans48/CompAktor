@@ -4,7 +4,7 @@ Stores the current actor mailboxes
 
 @author aevans
 """
-from actors.addressing import ActorAddress
+from actors.address.addressing import ActorAddress
 
 mailboxes = {}
 

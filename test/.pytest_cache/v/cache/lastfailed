@@ -1,0 +1,4 @@
+{
+  "test_asyncio_pool.py::test_callback": true,
+  "test_asyncio_pool.py::test_multiple_tasks": true
+}
