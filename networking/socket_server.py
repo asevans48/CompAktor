@@ -18,8 +18,6 @@ from gevent.pool import Pool
 from gevent.queue import Queue
 from gevent.server import StreamServer
 
-import pickle
-
 from logging_handler import logging
 
 monkey.patch_all()
