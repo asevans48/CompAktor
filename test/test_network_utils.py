@@ -46,8 +46,7 @@ def test_package_message(security_config):
     addr = ActorAddress('teseta')
     msg = package_message(message, addr, security_config)
     msgarr = msg.decode().split(':::', maxsplit=4)
-    jarr = json.loads(msgarr[3])
-    msg_instance = pickle.loads(base64.b64decode(jarr['message']))
+    msg_instance = pickle.loads(base64.b64decode(msgarr['message']))
     assert(type(msg_instance) == TestMessage)
     print(msg)
     sig = msgarr[1]
@@ -59,7 +58,6 @@ def test_send_message_to_actor(server, security_config, target, sender):
     msg = TestMessage()
     send_message_to_actor(msg, target, sender, security_config)
     message = server.message_queue.get(timeout=30)
-    message = json.loads(message)
     assert (type(message['sender']) is list)
     assert (message['sender'][0] == 'actorb')
     assert (message.get('message', None) is not None)

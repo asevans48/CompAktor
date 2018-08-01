@@ -8,6 +8,7 @@ import atexit
 import base64
 import hashlib
 import hmac
+import json
 from threading import Thread
 
 import gevent
@@ -144,7 +145,8 @@ class SocketServer(Thread):
                 accepted = False
         else:
             accepted = False
-        self.message_queue.put(data.decode())
+        omessage = json.loads(data.decode())
+        self.message_queue.put(omessage)
 
     def stop_server(self):
         """

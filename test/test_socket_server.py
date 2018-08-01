@@ -42,7 +42,6 @@ def test_send_message(socket_server):
         sock.connect((HOST, PORT))
         sock.send(message)
         message = socket_server.message_queue.get(timeout=30)
-        message = json.loads(message)
         assert(type(message['sender']) is list)
         assert(message['sender'][0] == 'testa')
         assert(message.get('message', None) is not None)
