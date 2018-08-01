@@ -9,6 +9,7 @@ import gevent
 from gevent.queue import Queue
 
 from actors.addressing import get_address
+from networking.utils import send_message_to_actor, send_json_to_actor
 from pools.asyncio_work_pool import AsyncioWorkPool
 from pools.greenlet_pool import GreenletPool
 from pools.multiproc_pool import MultiProcPool
@@ -43,6 +44,8 @@ class BaseActor(gevent.Greenlet):
         self.host = actor_config.host
         self.port = actor_config.port
         self.myAddress = get_address()
+        self.myAddress.host = self.host
+        self.myAddress.port = self.port
         work_pool_type = actor_config.work_pool_type
         max_workers = actor_config.max_workers
         self.work_pool = None
@@ -53,6 +56,22 @@ class BaseActor(gevent.Greenlet):
         elif work_pool_type == WorkPoolType.PROCESS:
             self.work_pool = MultiProcPool(max_workers=max_workers)
         gevent.Greenlet.__init__(self)
+
+    def send(self, target, message):
+        """
+        Send the
+        :param target:  The target actor address
+        :type target:  ActorAddress
+        :param message:  The pickle-able message to send
+        :type message:  object
+        :return:
+        """
+        if type(message) is str:
+            send_message_to_actor(message, target, self.myAddress)
+        elif type(message) is dict:
+            send_json_to_actor(message, target, self.myAddress)
+        else:
+            raise ValueError('Message Must Be Either String or Dict')
 
     def receive(self, message):
         """

@@ -5,7 +5,8 @@ import socket
 from django.core.serializers import json
 
 from networking.socket_server import create_socket_server, ServerStarted, \
-    package_dict_as_json_string, package_message, ServerStopped
+    ServerStopped
+from networking.utils import package_dict_as_json_string, package_message
 
 HOST = '127.0.0.1'
 PORT = 12000

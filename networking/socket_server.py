@@ -173,35 +173,6 @@ class SocketServer(Thread):
             self.signal_queue.put(ServerStopped())
 
 
-def package_message(message):
-    """
-    Package a string message
-
-    :param message:  The message to package
-    :type message:  str
-    :return:  a bytes like message with appropriate length
-    :rtype:  bytes
-    """
-    if type(message) is not str:
-        raise ValueError('String Message Required in package_message')
-    return "{}:::{}".format(str(len(message)),message).encode()
-
-
-def package_dict_as_json_string(message):
-    """
-    Package a dictionary as json string in a byte array.
-
-    :param message:  The message to package
-    :type message:  dict
-    :return:  Json string in a byte array
-    :rtype:  bytes
-    """
-    if type(message) is not dict:
-        raise ValueError('Dict required in package_dict_as_json')
-    msg = json.dumps(message)
-    return "{}:::{}".format(str(len(message)), message).encode()
-
-
 def create_socket_server(host, port, max_threads=1000):
     """
     Get the gevent thread containing the running server
@@ -217,37 +188,3 @@ def create_socket_server(host, port, max_threads=1000):
     server = SocketServer(host, port, max_threads)
     server.start()
     return server
-
-
-if __name__ == "__main__":
-    try:
-        host = '127.0.0.1'
-        port = 12000
-        socket_server = create_socket_server(host, port)
-        socket_server.signal_queue.get(timeout=30)
-        logging.log_info('Starting Test')
-        try:
-            import socket
-            for i in range(0, 100):
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                try:
-                    sock.connect((host, port))
-                    msg = package_message('Hello')
-                    sock.send(msg)
-                finally:
-                    sock.close()
-
-            i = 0
-            while socket_server.message_queue.empty() is False:
-                i += 1
-                message = socket_server.message_queue.get(timeout=30)
-                assert (message is not None)
-                assert (type(message) is dict)
-                assert (message.get('data', None) is not None)
-                assert (message['data'].decode() == 'Hello')
-        finally:
-            logging.log_info('Terminating Server')
-            socket_server.stop_server()
-            socket_server.signal_queue.get(timeout=30)
-    except Exception as e:
-        logging.log_error()
