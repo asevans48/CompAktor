@@ -33,6 +33,19 @@ class ActorRegistry(object):
         """
         self.registry = {}
 
+    def has_actor(self, address):
+        """
+        Check if an actor is in the registry
+
+        :param address:  The address to handle
+        :type address:  str
+        :return:  Whether or not the actor is in the registry
+        :rtype:  boolean
+        """
+        if self.registry.get(address, None):
+            return True
+        return False
+
     def add_actor(self, actor_address, actor_status, mailbox, actor_proc=None, parent=[]):
         """
         Adds the actor to the registry
@@ -123,7 +136,7 @@ class ActorRegistry(object):
 
     def get_actor(self, actor_address, default=None):
         """
-        Get the required actor.
+        Get the required actor information dict.
 
         :param actor_address:  The actor address
         :type actor_address:  ActorAddress

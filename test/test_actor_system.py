@@ -79,5 +79,10 @@ def test_receive():
 
 
 @pytest.mark.order8
+def test_global_registration():
+    pass
+
+
+@pytest.mark.order9
 def test_stop():
     pass

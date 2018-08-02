@@ -8,10 +8,13 @@ from gevent.queue import Queue
 
 from actors.base_actor import BaseActor, WorkPoolType
 from actors.modules.error import raise_not_handled_in_receipt
-from messages.actor_maintenance import RemoveActor, RegisterActor, CreateActor, RemoveChild, StopActor, ActorInf
+from messages.actor_maintenance import RemoveActor, RegisterActor, CreateActor, RemoveChild, StopActor, ActorInf, \
+    RegisterGlobalActor, UnRegisterGlobalActor
+from messages.base import BaseMessage
+from messages.routing import ReturnMessage
 from messages.system_maintenance import SetConventionLeader
 from networking.socket_server import SocketServerSecurity, create_socket_server
-from registry.registry import ActorRegistry, ActorStatus
+from registry.registry import ActorRegistry
 
 
 class ActorSystem(BaseActor):
@@ -30,6 +33,7 @@ class ActorSystem(BaseActor):
         self.is_convention_leader = False
         self.server = None
         self.remote_systems = {}
+        self.global_actors = {}
         if self.config.host and self.config.port > 2000:
             self.server = create_socket_server(
                 self.config.host,
@@ -80,8 +84,21 @@ class ActorSystem(BaseActor):
         my_addr = self.config.myAddress
         return ActorInf(inf, target=sender, sender=my_addr)
 
+    def __unregister_global_actor(self, message, sender):
+        """
+        Unregister the actor.
 
-    def __register_actor(self, message, sender):
+        :param message:  The message to handle
+        :type message:  RegisterActor
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        global_name = message.global_name
+        actor_address = message.actor_address
+        if self.global_actors.get(global_name, None):
+            self.global_actors.pop(global_name)
+
+    def __register_global_actor(self, message, sender):
         """
         Register the actor.
 
@@ -90,30 +107,10 @@ class ActorSystem(BaseActor):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        pass
+        global_name = message.global_name
+        actor_address = message.actor_address
+        self.global_actors[global_name] = actor_address
 
-    def __create_actor(self, message, sender):
-        """
-        Handle the creation of an actor by message.
-
-        :param message:  The message to handle
-        :type message:  CreateActor
-        :param sender:  The message sender
-        :type sender:  ActorAddress
-        """
-        my_addr = self.config.myAddress
-        actor_cfg = message.actor_config
-        parent = [my_addr, ]
-        actor = message.actor_class(actor_cfg, my_addr, parent)
-        p = actor.start()
-        actor_addr = actor.config.myAddress
-        self.registery.add_actor(
-            actor_addr,
-            ActorStatus.RUNNING,
-            actor.config.mailbox,
-            p,
-            parent)
-        self.registery.add_child(my_addr, actor_addr)
 
     def __remove_child(self, message, sender):
         """
@@ -137,7 +134,14 @@ class ActorSystem(BaseActor):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        pass
+        msg = message.message
+        rval = self.receive(msg, sender)
+        my_addr = self.config.myAddress
+        if rval and issubclass(rval, BaseMessage):
+            omessage = rval
+        else:
+            omessage = ReturnMessage(rval, sender, my_addr)
+        self.send(omessage, my_addr)
 
     def receive(self, message, sender):
         """
@@ -152,8 +156,10 @@ class ActorSystem(BaseActor):
             self.__set_convention_leader(message, sender)
         elif type(message) is RemoveActor:
             self.__remove_actor(message, sender)
-        elif type(message) is RegisterActor:
-            self.__register_actor(message, sender)
+        elif type(message) is RegisterGlobalActor:
+            self.__register_global_actor(message, sender)
+        elif type(message) is UnRegisterGlobalActor:
+            self.__unregister_global_actor(message, sender)
         elif type(message) is CreateActor():
             self.__create_actor(message, sender)
         elif type(message) is RemoveChild:

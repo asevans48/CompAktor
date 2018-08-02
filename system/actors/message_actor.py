@@ -7,7 +7,8 @@ from multiprocessing import Queue
 
 from actors.base_actor import BaseActor
 from actors.modules.error import raise_not_handled_in_receipt
-from messages.routing import Ask, Tell, Broadcast
+from messages.base import BaseMessage
+from messages.routing import Ask, Tell, Broadcast, ReturnMessage
 
 
 class MessageActor(BaseActor):
@@ -24,19 +25,6 @@ class MessageActor(BaseActor):
         self.entry_queue = Queue()
         super(MessageActor, self).__init__(config, system_address)
 
-
-    def __handle_tell(self, message, sender):
-        """
-        Handle the tell request.
-
-        :param message:  The message to handle
-        :type message:  Tell
-        :param sender:  The message sender
-        :type sender:  ActorAddress
-        """
-        pass
-
-
     def __handle_ask(self, message, sender):
         """
         Handle and ask request
@@ -46,7 +34,14 @@ class MessageActor(BaseActor):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        pass
+        msg = message.message
+        rval = self.receive(msg)
+        if rval and issubclass(rval, BaseMessage):
+            omessage = Ask(rval)
+        else:
+            my_addr = self.config.myAddress
+            omessage = ReturnMessage(rval, sender, my_addr)
+        self.send(sender, omessage)
 
     def __handle_broadcast(self, message, sender):
         """

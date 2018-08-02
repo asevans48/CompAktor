@@ -218,12 +218,18 @@ class SocketServer(Thread):
             def handle_connect(socket, address):
                 self.handle_socket(socket, address)
             pool = Pool(self.__max_threads)
-            self.__server = StreamServer(
-                (self.host, self.port),
-                handle_connect,
-                spawn=pool,
-                keyfile=self.__security.keyfile,
-                certfile=self.__security.certfile)
+            if self.__security.keyfile and self.__security.certfile:
+                self.__server = StreamServer(
+                    (self.host, self.port),
+                    handle_connect,
+                    spawn=pool,
+                    keyfile=self.__security.keyfile,
+                    certfile=self.__security.certfile)
+            else:
+                self.__server = StreamServer(
+                    (self.host, self.port),
+                    handle_connect,
+                    spawn=pool)
             self.__server.start()
             self._setup_termination()
             self.is_running = True

@@ -88,3 +88,25 @@ class Forward(BaseMessage):
         super(Forward, self).__init__(target, sender)
         self.message = message
         self.address_chain = address_chain
+
+
+class ReturnMessage(BaseMessage):
+    """
+    Used for empty ask
+    """
+
+    def __init__(self, rval, target, sender):
+        """
+        Constructor
+
+        :param address_chain:  The address chain to follow
+        :type address_chain:  list
+        :param message:  The message to forward
+        :type message:  BaseMessage
+        :param target:  The target actor
+        :type target:  ActorAddress
+        :param sender:  The sender
+        :type sender:  ActorAddress
+        """
+        super(ReturnMessage, self).__init__(target, sender)
+        self.rval = rval

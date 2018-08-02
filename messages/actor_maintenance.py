@@ -95,6 +95,50 @@ class RegisterActor(BaseMessage):
         self.actor_status = actor_status
 
 
+class UnRegisterGlobalActor(RegisterActor):
+    """
+    Unregister a global actor
+    """
+
+    def __init__(self, global_name, actor_address, target, sender):
+        """
+        Constructor
+
+        :param global_name:  The global actor name
+        :type global_name:  str
+        :param actor_address:  The actor address
+        :type actor_address:  ActorAddress
+        :param target:  The target address
+        :type target:  ActorAddress
+        :param sender:  The sender address
+        :type sender:  ActorAddress
+        """
+        super(RegisterGlobalActor, self).__init__(actor_address, None, target, sender)
+        self.global_name = global_name
+
+
+class RegisterGlobalActor(RegisterActor):
+    """
+    Register a global actor and the global actor address
+    """
+
+    def __init__(self, global_name, actor_address, target, sender):
+        """
+        Constructor
+
+        :param global_name:  The global actor name
+        :type global_name:  str
+        :param actor_address:  The actor address
+        :type actor_address:  ActorAddress
+        :param target:  The target address
+        :type target:  ActorAddress
+        :param sender:  The sender address
+        :type sender:  ActorAddress
+        """
+        super(RegisterGlobalActor, self).__init__(actor_address, None, target, sender)
+        self.global_name = global_name
+
+
 class RemoveActor(BaseMessage):
     """
     Removes an actor without effecting the actor status

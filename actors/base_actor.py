@@ -18,8 +18,10 @@ from gevent import monkey
 from logging_handler import logging
 from logging_handler.logging import package_error_message
 from messages.actor_maintenance import SetActorStatus, RegisterActor, StopActor
+from messages.base import BaseMessage
 from messages.poison import POISONPILL
-from messages.routing import Forward
+from messages.routing import Forward, Broadcast, Tell, Ask, ReturnMessage
+from networking.communication import send_message
 from networking.socket_server import SocketServerSecurity
 from networking.utils import package_message
 from pools.asyncio_work_pool import AsyncioWorkPool
@@ -162,7 +164,16 @@ class BaseActor(Process):
             message = logging.package_error_message()
             logging.log_error(logger, message)
 
-    def create_actor(self, message, sender):
+    def __create_actor(self, message, sender):
+        """
+        Creates an actor and sets the actors parent to current actors
+        parent with the current actor appended
+
+        :param message:  The message to handle
+        :type message:  CreateActor
+        :param sender:  The sender
+        :type sender:  ActorAddress
+        """
         try:
             actor_class = message.actor_class
             actor_config = message.actor_config
@@ -180,22 +191,6 @@ class BaseActor(Process):
                 actor.config.mailbox,
                 actor_proc=p,
                 parent=actor_parent)
-            try:
-                actor_address = actor.config.myAddress
-                register = RegisterActor(
-                    actor_address,
-                    ActorStatus.RUNNING,
-                    self.__system_address,
-                    self.config.myAddress)
-                rval = self.send(self.__system_address, register)
-                if rval is False:
-                    raise Exception('Failed to Register Actor')
-            except Exception as e:
-                p.terminate()
-                p.join(timeout=10)
-                logger = logging.get_logger()
-                message = package_error_message()
-                logging.log_error(logger, message)
         except Exception as e:
             logger = logging.get_logger()
             message = package_error_message()
@@ -219,25 +214,11 @@ class BaseActor(Process):
             self.server_security,
             target)
         if target and target.host and target.port:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            if self.config.security_config.certfile:
-                ssl_version = self.config.security_config.ssl_version
-                ciphers = self.config.security_config.cipher
-                ssl.wrap_socket(sock, ssl_version=ssl_version, ciphers=ciphers)
             try:
-                try:
-                    sock.connect((target.host, target.port))
-                    sock.send(msg)
-                    success = True
-                except Exception as e:
-                    message = traceback.format_exc()
-                    message = package_message(message)
-                    logger = logging.get_logger()
-                    logging.log_error(logger, message)
-                finally:
-                    sock.close()
+                sender = self.config.myAddress
+                send_message(msg, sender, target, self.config.security_config)
             except Exception as e:
-                message = package_error_message()
+                message = logging.package_error_message()
                 logger = logging.get_logger()
                 logging.log_error(logger, message)
         return success
@@ -258,6 +239,72 @@ class BaseActor(Process):
         """
         pass
 
+    def __handle_broadcast(self, message, sender):
+        """
+        The message to broadcast
+
+        :param message:  The message to handle
+        :type message:  BaseMessage
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        message_dict = {'message': message, 'sender': sender}
+        for child in self.__child_registry.keys():
+            try:
+                inf = self.__child_registry[child]
+                mailbox = inf['mailbox']
+                mailbox.put_no_wait(message_dict)
+            except Exception as e:
+                logger = logging.get_logger()
+                message = "Failed to Broadcast {} --> {}".format(
+                    self.config.myAddress,
+                    child['address']
+                )
+                logging.log_error(logger, message)
+
+    def __handle_ask(self, message, sender):
+        """
+        The message to ask
+
+        :param message:  The message to handle
+        :type message:  BaseMessage
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        msg = message.message
+        rval = self.receive(msg)
+        if rval and issubclass(rval, BaseMessage):
+            omessage = Ask(rval)
+        else:
+            my_addr = self.config.myAddress
+            omessage = ReturnMessage(rval, sender, my_addr)
+        self.send(sender, omessage)
+
+    def __handle_tell(self, message, sender):
+        """
+        The message to tell
+
+        :param message:  The message to handle
+        :type message:  BaseMessage
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        self.receive(message.message, sender)
+
+    def __handle_forward(self, message, sender):
+        msg = message.message
+        chain = message.address_chain
+        if chain and len(chain) > 0:
+            addr = chain.pop(0)
+            if self.__child_registry.has_actor(addr):
+                target_addr = self.__child_registry.get_actor(addr)
+                target_addr = target_addr['address']
+                new_fwd = Forward(msg, chain, target_addr, sender)
+                self.send(target_addr, new_fwd)
+        else:
+            self.receive(msg, message.sender)
+
+
     def __receive(self, message, sender):
         """
         The receieve hidden method helper.
@@ -268,7 +315,16 @@ class BaseActor(Process):
         :type sender:  ActorAdddress
         """
         try:
-            self.receive(message, sender)
+            if type(message) is Broadcast:
+                self.__handle_broadcast(message, sender)
+            elif type(message) is Tell:
+                self.__handle_tell(message, sender)
+            elif type(message) is Ask:
+                return self.__handle_ask(message, sender)
+            elif type(message) is Forward:
+                return self.__handle_forward(message, sender)
+            else:
+                return self.receive(message, sender)
         except Exception as e:
             logger = logging.get_logger()
             message = logging.package_error_message()
@@ -300,7 +356,7 @@ class BaseActor(Process):
                 try:
                     message = message.decode()
                     message, sender = self.__unpack_message(message)
-                    self.receive(message, sender)
+                    self.__receive(message, sender)
                 except Exception as e:
                     logger = logging.get_logger()
                     message = package_error_message()
