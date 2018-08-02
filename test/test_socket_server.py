@@ -22,21 +22,28 @@ def socket_server():
     return server
 
 
+@pytest.fixture
+def sec():
+    sec = SocketServerSecurity()
+    return sec
+
+
 @pytest.mark.order1
-def test_socket_conn(socket_server):
+def test_socket_conn(socket_server, sec):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.settimeout(2)
         sock.connect((HOST, PORT))
+        message = package_message(TestMessage(), ActorAddress('testa'), sec)
+        sock.send(message)
     finally:
         sock.close()
 
 
 @pytest.mark.order2
-def test_send_message(socket_server):
+def test_send_message(socket_server, sec):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        sec = SocketServerSecurity()
         message = package_message(TestMessage(), ActorAddress('testa'), sec)
         sock.settimeout(2)
         sock.connect((HOST, PORT))

@@ -5,6 +5,7 @@ The base actor
 """
 import atexit
 import socket
+import ssl
 import traceback
 from copy import copy, deepcopy
 from enum import Enum
@@ -71,7 +72,6 @@ class BaseActor(Process):
         :type parent:  ActorAddress
         """
         monkey.patch_all()
-        self.status = ActorStatus.SETUP
         self.config = actor_config
         self.__system_address = system_address
         self._parent = parent
@@ -219,6 +219,10 @@ class BaseActor(Process):
             target)
         if target and target.host and target.port:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            if self.config.security_config.certfile:
+                ssl_version = self.config.security_config.ssl_version
+                ciphers = self.config.security_config.cipher
+                ssl.wrap_socket(sock, ssl_version=ssl_version, ciphers=ciphers)
             try:
                 try:
                     sock.connect((target.host, target.port))
@@ -261,7 +265,9 @@ class BaseActor(Process):
         :return: A tuple of the message and sender address
         :rtype:  tuple
         """
-
+        msg = message.get('message', None)
+        sender = message.get('sender', None)
+        return (msg, sender)
 
     def start(self):
         """"

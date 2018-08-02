@@ -12,7 +12,6 @@ import json
 from threading import Thread
 
 import gevent
-from gevent import lock
 from gevent import monkey
 from gevent import signal
 from gevent.event import Event
@@ -21,7 +20,6 @@ from gevent.queue import Queue
 from gevent.server import StreamServer
 
 from logging_handler import logging
-from messages.utils import get_message_sender, get_object_from_message
 
 monkey.patch_all()
 
@@ -50,6 +48,10 @@ class SocketServerSecurity(object):
         self.__hashsize = 256 / 8
         self.__magic = 'sendreceive'
         self.buffer = 8192
+        self.keyfile = None
+        self.certfile = None
+        self.cipher = "ADH-AES256-SHA"
+        self.ssl_version = "TLSv1"
 
     def get_key(self):
         return self.__key
@@ -160,8 +162,9 @@ class SocketServer(Thread):
                 accepted = False
         else:
             accepted = False
-        omessage = json.loads(data.decode())
-        self.message_queue.put(omessage)
+        if len(data) > 0:
+            omessage = json.loads(data.decode())
+            self.message_queue.put(omessage)
 
     def stop_server(self):
         """
@@ -215,7 +218,12 @@ class SocketServer(Thread):
             def handle_connect(socket, address):
                 self.handle_socket(socket, address)
             pool = Pool(self.__max_threads)
-            self.__server = StreamServer((self.host, self.port), handle_connect, spawn=pool)
+            self.__server = StreamServer(
+                (self.host, self.port),
+                handle_connect,
+                spawn=pool,
+                keyfile=self.__security.keyfile,
+                certfile=self.__security.certfile)
             self.__server.start()
             self._setup_termination()
             self.is_running = True
