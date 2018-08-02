@@ -6,6 +6,26 @@ Messages for maintaining actors in the system and registry.
 from messages.base import BaseMessage
 
 
+class ActorInf(BaseMessage):
+    """
+    Actor information
+    """
+
+    def __init__(self, actor_inf, target, sender):
+        """
+        Constructor
+
+        :param actor_inf:  The actor information from the registry
+        :type actor_inf:  dict
+        :param target:  The target actor address
+        :type  target:  ActorAddress
+        :param sender:  The sender address
+        :type sender:  ActorAddress
+        """
+        super(ActorInf, self).__init__(target, sender)
+        self.actor_inf = actor_inf
+
+
 class ActorCleanup(BaseMessage):
     """
     Message for cleaning up the actor
@@ -179,3 +199,23 @@ class StopActor(BaseMessage):
         :type sender:  ActorAddress
         """
         super(StopActor, self).__init__(target, sender)
+
+
+class GetActorStatus(BaseMessage):
+    """
+    Get an actor status
+    """
+
+    def __init__(self, path, target, sender):
+        """
+        Constructor
+
+        :param path:  The path to the actor
+        :type path:  list
+        :param target:  The target actor
+        :type target:  ActorAddress
+        :param sender:  The sender actor
+        :type sender:  ActorAddress
+        """
+        super(GetActorStatus, self).__init__(target, sender)
+        self.path = path

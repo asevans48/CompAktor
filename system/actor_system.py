@@ -7,8 +7,11 @@ The actor registry.
 from gevent.queue import Queue
 
 from actors.base_actor import BaseActor, WorkPoolType
+from actors.modules.error import raise_not_handled_in_receipt
+from messages.actor_maintenance import RemoveActor, RegisterActor, CreateActor, RemoveChild, StopActor, ActorInf
+from messages.system_maintenance import SetConventionLeader
 from networking.socket_server import SocketServerSecurity, create_socket_server
-from registry.registry import ActorRegistry
+from registry.registry import ActorRegistry, ActorStatus
 
 
 class ActorSystem(BaseActor):
@@ -39,7 +42,7 @@ class ActorSystem(BaseActor):
             self.is_convention_leader = True
             self.config.convention_leader = self.config.myAddress
 
-    def set_convention_leader(self, message, sender):
+    def __set_convention_leader(self, message, sender):
         """
         Sets the convention leader
 
@@ -48,9 +51,19 @@ class ActorSystem(BaseActor):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        pass
+        convention_address = message.actor_address
+        my_addr = self.config.myAddress
+        if convention_address.address is my_addr.address\
+                and convention_address.host is my_addr.host\
+                and convention_address.port is my_addr.port:
+            self.is_convention_leader = True
+        self.config.convention_leader = convention_address
+        my_addr = self.config.myAddress
+        message.target = message.sender
+        message.sender = my_addr
+        return message
 
-    def remove_actor(self, message, sender):
+    def __remove_actor(self, message, sender):
         """
         Handle the removal of an actor from the system.
 
@@ -58,10 +71,17 @@ class ActorSystem(BaseActor):
         :type message:
         :param sender:
         """
-        pass
+        inf = None
+        addr = message.actor_address
+        if self.registery.get(addr.address, None):
+            msg = StopActor(addr, self.config.myAddress)
+            self.send(addr, msg)
+            inf = self.registery.remove_actor(addr, terminate=False)
+        my_addr = self.config.myAddress
+        return ActorInf(inf, target=sender, sender=my_addr)
 
 
-    def register_actor(self, message, sender):
+    def __register_actor(self, message, sender):
         """
         Register the actor.
 
@@ -72,7 +92,7 @@ class ActorSystem(BaseActor):
         """
         pass
 
-    def create_actor(self, message, sender):
+    def __create_actor(self, message, sender):
         """
         Handle the creation of an actor by message.
 
@@ -81,11 +101,36 @@ class ActorSystem(BaseActor):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        pass
+        my_addr = self.config.myAddress
+        actor_cfg = message.actor_config
+        parent = [my_addr, ]
+        actor = message.actor_class(actor_cfg, my_addr, parent)
+        p = actor.start()
+        actor_addr = actor.config.myAddress
+        self.registery.add_actor(
+            actor_addr,
+            ActorStatus.RUNNING,
+            actor.config.mailbox,
+            p,
+            parent)
+        self.registery.add_child(my_addr, actor_addr)
 
-    def remove_child(self, message, sender):
+    def __remove_child(self, message, sender):
         """
-        Remove a child from an actor.
+        Remove a child from an actor.  Assumes actor is stopped
+
+        :param message:  The message to handle
+        :type message:  RemoveChild
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        parent = message.parent_address
+        child = message.child_address
+        self.registery.remove_child(parent, child)
+
+    def __handle_ask(self, message, sender):
+        """
+        Remove a child from an actor.  Assumes actor is stopped
 
         :param message:  The message to handle
         :type message:  RemoveChild
@@ -103,12 +148,66 @@ class ActorSystem(BaseActor):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        pass
+        if type(message) is SetConventionLeader:
+            self.__set_convention_leader(message, sender)
+        elif type(message) is RemoveActor:
+            self.__remove_actor(message, sender)
+        elif type(message) is RegisterActor:
+            self.__register_actor(message, sender)
+        elif type(message) is CreateActor():
+            self.__create_actor(message, sender)
+        elif type(message) is RemoveChild:
+            self.__remove_child(message, sender)
+        else:
+            my_addr = self.config.myAddress
+            raise_not_handled_in_receipt(message, my_addr)
 
 
-def tell(system, message, target):
+def create_actor(system, actor_config):
+    """
+    Create an actor on a system with the system as parent
+
+    :param system:  The actor system
+    :type system:  ActorAddress
+    :param actor_config:  The actor config
+    :type actor_config:  ActorConfig
+    """
     pass
 
 
-def ask(system, message, target):
+def tell(system, message):
+    """
+    Tell the system
+
+    :param system:  The actor system
+    :type system:  ActorAddress
+    :param message:  The message to handle
+    :type message:  BaseMessage
+    """
+    pass
+
+
+def ask(system, message):
+    """
+    Ask for a response from the sytem. First response wins.
+
+    :param system:  The system address
+    :type system:  ActorAddress
+    :param message:  The message to send
+    :type message:  BaseMessage
+    :return:  A new ask request with a wrapped response
+    :rtype:  BaseMessage
+    """
+    pass
+
+
+def broadcast(system, message):
+    """
+    Broadcasts a message through the entire system.
+
+    :param system:  The actor system address
+    :type system:  ActorAddress
+    :param message:  The message to handle
+    :type message:  BaseMessage
+    """
     pass

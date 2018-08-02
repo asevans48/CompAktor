@@ -107,20 +107,19 @@ class ActorRegistry(object):
         if self.registry.get(actor_address.address, None):
             self.registry[actor_address.address]['status'] = status
 
-    def remove_actor(self, actor_address, terminate=True):
+    def remove_actor(self, actor_address):
         """
         Remove an actor by address
 
         :param actor_address:  The actor address to remove
         :type actor_address:  ActorAddress
-        :param terminate:  Terminates an actor as possible
-        :type terminate:  boolean
         :return:  Actor information
         :rtype:  dict
         """
         actor_inf = None
         if self.registry.get(actor_address.address, None):
             actor_inf = self.registry.pop(actor_address.address)
+        return actor_inf
 
     def get_actor(self, actor_address, default=None):
         """
