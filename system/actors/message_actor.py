@@ -7,8 +7,9 @@ from multiprocessing import Queue
 
 from actors.base_actor import BaseActor
 from actors.modules.error import raise_not_handled_in_receipt
+from messages.actor_maintenance import CreateActor
 from messages.base import BaseMessage
-from messages.routing import Ask, Tell, Broadcast, ReturnMessage
+from messages.routing import Ask, Tell, Broadcast
 
 
 class MessageActor(BaseActor):
@@ -25,24 +26,6 @@ class MessageActor(BaseActor):
         self.entry_queue = Queue()
         super(MessageActor, self).__init__(config, system_address)
 
-    def __handle_ask(self, message, sender):
-        """
-        Handle and ask request
-
-        :param message:  The actor message
-        :type message:  Ask
-        :param sender:  The message sender
-        :type sender:  ActorAddress
-        """
-        msg = message.message
-        rval = self.receive(msg)
-        if rval and issubclass(rval, BaseMessage):
-            omessage = Ask(rval)
-        else:
-            my_addr = self.config.myAddress
-            omessage = ReturnMessage(rval, sender, my_addr)
-        self.send(sender, omessage)
-
     def __handle_broadcast(self, message, sender):
         """
         Send a broadcast to the target system
@@ -52,9 +35,23 @@ class MessageActor(BaseActor):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        pass
+        target = self.get_system_address()
+        message.target = target
+        self.send(target, message)
 
-    def receive(self, message, sender):
+    def __handle_create_actor(self, message, sender):
+        """
+        Handle an actor creation request
+        :param message:  The message to handle
+        :type message:  CreateActor
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        target = self.get_system_address()
+        message.target = target
+        self.send(target, message)
+
+    def __receive(self, message, sender):
         """
         Handle message receipt.
 
@@ -69,6 +66,8 @@ class MessageActor(BaseActor):
             self.__handle_tell(message, sender)
         elif type(message) is Broadcast:
             self.__handle_broadcast(message, sender)
+        elif type(message) is CreateActor:
+            self.__handle_create_actor
         else:
             my_addr = self.config.myAddress
             raise_not_handled_in_receipt(message, my_addr)

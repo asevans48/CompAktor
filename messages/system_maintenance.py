@@ -23,7 +23,7 @@ class SetConventionLeader(BaseMessage):
         self.actor_address = actor_address
 
 
-class SystemFailuire(BaseMessage):
+class SystemFailure(BaseMessage):
 
     def __init__(self, error, error_code, target, sender):
         """
@@ -38,6 +38,6 @@ class SystemFailuire(BaseMessage):
         :param sender:  The sender address
         :type sender:  ActorAddress
         """
-        super(SystemFailuire, self).__init__(target, sender)
+        super(SystemFailure, self).__init__(target, sender)
         self.error = error
         self.error_code = error_code

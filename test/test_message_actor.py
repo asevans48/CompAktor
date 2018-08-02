@@ -16,6 +16,10 @@ def test_message_queue(system, actor):
     pass
 
 
+def test_create_actor(system, actor):
+    pass
+
+
 def test_message_actor():
     pass
 

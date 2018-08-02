@@ -3,18 +3,22 @@ The actor registry.
 
 @author aevans
 """
+import atexit
+from time import sleep
 
 from gevent.queue import Queue
 
-from actors.base_actor import BaseActor, WorkPoolType
+from actors.base_actor import BaseActor, WorkPoolType, ActorConfig
 from actors.modules.error import raise_not_handled_in_receipt
 from messages.actor_maintenance import RemoveActor, RegisterActor, CreateActor, RemoveChild, StopActor, ActorInf, \
     RegisterGlobalActor, UnRegisterGlobalActor
 from messages.base import BaseMessage
-from messages.routing import ReturnMessage
+from messages.routing import ReturnMessage, Tell, Ask, Broadcast
 from messages.system_maintenance import SetConventionLeader
 from networking.socket_server import SocketServerSecurity, create_socket_server
+from networking.utils import package_message
 from registry.registry import ActorRegistry
+from system.actors.message_actor import MessageActor
 
 
 class ActorSystem(BaseActor):
@@ -169,51 +173,141 @@ class ActorSystem(BaseActor):
             raise_not_handled_in_receipt(message, my_addr)
 
 
-def create_actor(system, actor_config):
-    """
-    Create an actor on a system with the system as parent
+class ActorSystemHandler(object):
 
-    :param system:  The actor system
-    :type system:  ActorAddress
-    :param actor_config:  The actor config
-    :type actor_config:  ActorConfig
-    """
-    pass
+    def __init__(self, actor_config):
+        """
+        The users entry point to the system.
 
+        :param actor_config:  The configuration for the actor system
+        :type actor_config:  ActorConfig
+        """
+        self.__system_config = actor_config
+        self.__system_actor = None
+        self.__system_process = None
+        self.__message_actor = None
+        self.__message_process = None
+        atexit.register(self.shutdown)
 
-def tell(system, message):
-    """
-    Tell the system
+    def create_actor(self, actor_class, actor_config, system_address):
+        """
+        Create an actor on a system with the system as parent
 
-    :param system:  The actor system
-    :type system:  ActorAddress
-    :param message:  The message to handle
-    :type message:  BaseMessage
-    """
-    pass
+        :param system_addres:  The actor system
+        :type system_address:  ActorAddress
+        :param actor_config:  The actor config
+        :type actor_config:  ActorConfig
+        """
+        if self.__message_actor is None:
+            self.__create_message_actor()
+        actor = self.__message_actor
+        message = CreateActor(
+            actor_class,
+            actor_config,
+            system_address,
+            system_address,
+            actor.config.myAddress)
+        scfg = actor.config.security_config
+        m_addr = actor.config.myAddress
+        message = package_message(message, m_addr, scfg, system_address)
+        actor.config.mailbox.put_nowait(message)
 
+    def __create_message_actor(self):
+        if self.__system_process and self.__system_process.is_alive:
+            self.__message_actor = MessageActor(
+                self.__system_config,
+                self.__system_actor.config.myAddress)
+            self.__message_process = self.__message_actor.start()
+            sys_addr = self.__system_actor.config.myAddress
+            self.create_actor(MessageActor, self.__system_config, sys_addr)
 
-def ask(system, message):
-    """
-    Ask for a response from the sytem. First response wins.
+    def tell(self, system, message, target, sender=None):
+        """
+        Tell the system
 
-    :param system:  The system address
-    :type system:  ActorAddress
-    :param message:  The message to send
-    :type message:  BaseMessage
-    :return:  A new ask request with a wrapped response
-    :rtype:  BaseMessage
-    """
-    pass
+        :param system:  The actor system
+        :type system:  ActorAddress
+        :param message:  The message to handle
+        :type message:  BaseMessage
+        :param target:  The target actor address
+        :type target:   ActorAddress
+        :param sender:  The sender address defaulting to target
+        :type sender:  ActorAddress
+        """
+        if self.__message_actor is None:
+            self.__create_message_actor()
+        if sender is None:
+            sender = self.__message_actor.config.myAddress
+        sec = self.__system_config.security_config
+        message = Tell(message, target, sender)
+        message = package_message(message, sender, sec, target)
+        self.__message_actor.config.queue.put_nowait(message)
 
+    def ask(self, system, message, target, sender=None, timeout=30):
+        """
+        Ask for a response from the sytem. First response wins.
 
-def broadcast(system, message):
-    """
-    Broadcasts a message through the entire system.
+        :param system:  The system address
+        :type system:  ActorAddress
+        :param message:  The message to send
+        :type message:  BaseMessage
+        :param target:  The target actor address
+        :type target:   ActorAddress
+        :param sender:  The sender address defaulting to target
+        :type sender:  ActorAddress
+        :param timeout:  Time to wait for system response
+        :type timeout:  int
+        :return:  A new ask request with a wrapped response
+        :rtype:  BaseMessage
+        """
+        if self.__message_actor is None:
+            self.__create_message_actor()
+        if sender is None:
+            sender = self.__message_actor.config.myAddress
+        sec = self.__system_config.security_config
+        message = Ask(message, target, sender)
+        message = package_message(message, sender, sec, target)
+        self.__message_actor.config.queue.put_nowait(message)
+        sleep(1)
+        rval = self.__message_actor.config.queue.get(timeout=timeout)
+        if type(rval) is Ask:
+            return rval.message
+        else:
+            raise ValueError('Failed to Receive Response')
 
-    :param system:  The actor system address
-    :type system:  ActorAddress
-    :param message:  The message to handle
-    :type message:  BaseMessage
-    """
-    pass
+    def broadcast(self, system, message, target, sender=None):
+        """
+        Tell the system
+
+        :param system:  The actor system
+        :type system:  ActorAddress
+        :param message:  The message to handle
+        :type message:  BaseMessage
+        :param target:  The target actor address
+        :type target:   ActorAddress
+        :param sender:  The sender address defaulting to target
+        :type sender:  ActorAddress
+        """
+        if self.__message_actor is None:
+            self.__create_message_actor()
+        if sender is None:
+            sender = self.__message_actor.config.myAddress
+        sec = self.__system_config.security_config
+        message = Broadcast(message, target, sender)
+        message = package_message(message, sender, sec, target)
+        self.__message_actor.config.queue.put_nowait(message)
+
+    def start_system(self):
+        self.__system_actor = ActorSystem(self.__system_config)
+        self.__system_process = self.__system_actor.start()
+
+    def shutdown(self):
+        sys_addr = self.__system_actor.config.myAddress
+        p = self.__system_process
+        if p.is_alive:
+            message = StopActor()
+            sec_cfg = self.__system_actor.config.security
+            message = package_message(message, sys_addr, sec_cfg, sys_addr)
+            self.__system_actor.config.mailbox.put_nowait(message)
+            p.terminate()
+            p.join(timeout=120)

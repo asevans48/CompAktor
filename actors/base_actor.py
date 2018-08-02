@@ -4,9 +4,6 @@ The base actor
 @author aevans
 """
 import atexit
-import socket
-import ssl
-import traceback
 from copy import deepcopy
 from enum import Enum
 from multiprocessing import Process
@@ -17,7 +14,7 @@ from gevent import monkey
 
 from logging_handler import logging
 from logging_handler.logging import package_error_message
-from messages.actor_maintenance import SetActorStatus, RegisterActor, StopActor
+from messages.actor_maintenance import SetActorStatus, StopActor
 from messages.base import BaseMessage
 from messages.poison import POISONPILL
 from messages.routing import Forward, Broadcast, Tell, Ask, ReturnMessage
@@ -48,8 +45,8 @@ class ActorConfig(object):
     log_config = None
     apm_config = None
     global_name = None
-    host = None
-    port = 0
+    host = '127.0.0.1'
+    port = 12000
     work_pool_type = WorkPoolType.ASNYCIO
     max_workers = 100
     security_config = SocketServerSecurity()
@@ -96,7 +93,21 @@ class BaseActor(Process):
         atexit.register(self._cleanup)
         Process.__init__(self)
 
+    def get_system_address(self):
+        """
+        Gets the system address
+        :return:  The system address
+        :rtype:  ActorAddress
+        """
+        return self.__system_address
+
     def _get_parent(self):
+        """
+        Get the parent address.
+
+        :return:  The parent address
+        :rtype:  ActorAddress
+        """
         return self._parent
 
     def _setup(self):
