@@ -24,7 +24,6 @@ class ActorSystem(BaseActor):
         """
         actor_config.work_pool_type = WorkPoolType.NO_POOL
         super(ActorSystem, self).__init__(actor_config, self.message_queue)
-        self.convention_leader = None
         self.is_convention_leader = False
         self.server = None
         self.remote_systems = {}
@@ -36,6 +35,9 @@ class ActorSystem(BaseActor):
             self.server.signal_queue.get(timeout=10)
         self.registery = ActorRegistry()
         self.message_queue = Queue()
+        if self.config.convention_leader is None:
+            self.is_convention_leader = True
+            self.config.convention_leader = self.config.myAddress
 
     def set_convention_leader(self, message, sender):
         """

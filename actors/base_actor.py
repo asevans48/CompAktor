@@ -7,7 +7,7 @@ import atexit
 import socket
 import ssl
 import traceback
-from copy import copy, deepcopy
+from copy import deepcopy
 from enum import Enum
 from multiprocessing import Process
 from multiprocessing import Queue
@@ -53,6 +53,7 @@ class ActorConfig(object):
     security_config = SocketServerSecurity()
     mailbox = Queue()
     myAddress = None
+    convention_leader = None
 
 
 class BaseActor(Process):
@@ -247,14 +248,31 @@ class BaseActor(Process):
         """
         self.running = False
 
-    def receive(self, message):
+    def receive(self, message, sender):
         """
-        The receieve method to override.
-
+        The receive handler to override
         :param message:  The message to handle
-        :type message:  object
+        :type message:  BaseMessage
+        :param sender:  The sender of the message
+        :type sender:  ActorAddress
         """
         pass
+
+    def __receive(self, message, sender):
+        """
+        The receieve hidden method helper.
+
+        :param message:  The message to handle
+        :type message:  BaseMessage
+        :param sender:  The sender of the message
+        :type sender:  ActorAdddress
+        """
+        try:
+            self.receive(message, sender)
+        except Exception as e:
+            logger = logging.get_logger()
+            message = logging.package_error_message()
+            logging.log_error(logger, message)
 
     def __unpack_message(self, message):
         """
@@ -282,7 +300,7 @@ class BaseActor(Process):
                 try:
                     message = message.decode()
                     message, sender = self.__unpack_message(message)
-                    self.receive(message)
+                    self.receive(message, sender)
                 except Exception as e:
                     logger = logging.get_logger()
                     message = package_error_message()
