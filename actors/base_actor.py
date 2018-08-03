@@ -264,6 +264,10 @@ class BaseActor(Process):
         :rtype:  boolean
         """
         target = message.target
+        host = self.config.myAddress.host
+        port = self.config.myAddress.port
+        if target.host != host or target.port != port:
+            self.send(target, message)
         if target and message.target.address is not self.config.myAddress.address:
             message_parent = message.target.parent
             path = deepcopy(message_parent)
