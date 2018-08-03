@@ -220,20 +220,25 @@ class BaseActor(Process):
         :rtype:  boolean
         """
         success = False
-        msg = package_message(
-            message,
-            self.myAddress,
-            self.server_security,
-            target)
-        if target and target.host and target.port:
-            try:
-                sender = self.config.myAddress
-                send_message(msg, sender, target, self.config.security_config)
-            except Exception as e:
-                message = logging.package_error_message()
-                logger = logging.get_logger()
-                logging.log_error(logger, message)
-        return success
+        forwarded = self.__forward_as_needed(message, self.myAddress)
+        if forwarded is False:
+            msg = package_message(
+                message,
+                self.myAddress,
+                self.server_security,
+                target)
+            if target and target.host and target.port:
+                try:
+                    sender = self.config.myAddress
+                    send_message(msg, sender, target, self.config.security_config)
+                    success = True
+                except Exception as e:
+                    message = logging.package_error_message()
+                    logger = logging.get_logger()
+                    logging.log_error(logger, message)
+            return success
+        else:
+            return forwarded
 
     def __stop(self):
         """
@@ -396,13 +401,11 @@ class BaseActor(Process):
         """
         self.running = True
         while self.running:
-            message = self.inbox.get()
+            message, sender = self.inbox.get()
             if type(message) is POISONPILL:
                 self.running = False
             else:
                 try:
-                    message = message.decode()
-                    message, sender = self.__unpack_message(message)
                     self.__receive(message, sender)
                 except Exception as e:
                     logger = logging.get_logger()

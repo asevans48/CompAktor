@@ -9,19 +9,18 @@ import base64
 import hashlib
 import hmac
 import json
-from threading import Thread
+from multiprocessing import Process, Queue
 
 import gevent
 from gevent import monkey
 from gevent import signal
 from gevent.event import Event
 from gevent.pool import Pool
-from gevent.queue import Queue
 from gevent.server import StreamServer
 
 from logging_handler import logging
 
-monkey.patch_all()
+#monkey.patch_all()
 
 
 class LengthStringRequiredException(object):
@@ -63,7 +62,7 @@ class SocketServerSecurity(object):
         return self.__magic
 
 
-class SocketServer(Thread):
+class SocketServer(object):
     """
     The socket server which extends Thread.
     """
@@ -75,7 +74,8 @@ class SocketServer(Thread):
             max_threads=1000,
             signal_queue=Queue(),
             message_queue=Queue(),
-            security=SocketServerSecurity()):
+            security=SocketServerSecurity(),
+            message_handler=None):
         """
         The constructor.
 
@@ -91,8 +91,9 @@ class SocketServer(Thread):
         :type mssage_queue:  gevent.queue.Queue
         :param registry:  The registry for forwarding a message
         :type registry:  dict
+        :param message_handler:  A message handler for the socket server
+        :type message_handler:
         """
-        Thread.__init__(self)
         self.__security = security
         self.is_running = False
         self.__server = None
@@ -103,6 +104,7 @@ class SocketServer(Thread):
         self.message_queue = message_queue
         self._socket_timeout = 10
         self.__max_threads = max_threads
+        self.__message_handler = message_handler
 
     @property
     def socket_timeout(self):
@@ -164,7 +166,10 @@ class SocketServer(Thread):
             accepted = False
         if len(data) > 0:
             omessage = json.loads(data.decode())
-            self.message_queue.put(omessage)
+            if self.__message_handler:
+                self.__message_handler(omessage)
+            else:
+                self.message_queue.put(omessage)
 
     def stop_server(self):
         """
@@ -234,8 +239,8 @@ class SocketServer(Thread):
             self._setup_termination()
             self.is_running = True
             self.signal_queue.put(ServerStarted())
-            self.evt.wait()
-            self._stop_server(10)
+            self.__server.evt.wait()
+            self.stop_server(10)
         except Exception as e:
             self.signal_queue.put(e)
         finally:

@@ -1,46 +1,44 @@
-from multiprocessing import Queue, Process
-from time import sleep
+from random import randint
 
 import gevent
-from gevent.queue import Queue as GQueue
+import socket
 
-class Proc(Process):
+from actors.address.addressing import ActorAddress
+from messages.utils import get_object_from_message
+from networking.socket_server import create_socket_server, SocketServerSecurity
+from networking.utils import package_message
+from test.modules.message import TestMessage
 
-    def __init__(self, q):
-        self.q = q
-        Process.__init__(self)
-
-    def run(self):
-        while True:
-            self.q.put('Hello')
-            sleep(1)
+HOST = '127.0.0.1'
+PORT = 12000
 
 
-class PingPong(gevent.Greenlet):
-
-    def __init__(self, q, gq):
-        self.q = q
-        self.gq = gq
-        Process.__init__(self)
-
-    def start(self):
-        while True:
-            msg = self.q.get()
-            print(msg)
-            self.gq.put(msg)
-            gevent.sleep(0)
+def send_to_server(inum):
+    to = randint(0,1)
+    gevent.sleep(to)
+    addr = ActorAddress('test{}'.format(inum), HOST, PORT)
+    sec = SocketServerSecurity()
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.connect((HOST, PORT))
+        msg = TestMessage()
+        msg.test_int = inum
+        message = package_message(msg, addr, sec)
+        sock.send(message)
+    finally:
+        sock.close()
 
 
 if __name__ == "__main__":
-    q = Queue(maxsize=100)
-    gq = GQueue(maxsize=100)
-    p1 = Proc(q)
-    p2 = Proc(q)
-    p1 = p1.start()
-    p2 = p2.start()
-    pp = PingPong(q, gq)
-    gevent.spawn(pp.start)
-    pp.start()
-    while True:
-        print("Getting")
-        print(gq.get())
+    pl = gevent.pool.Pool()
+    server = create_socket_server(HOST, PORT, 2)
+    print(server.is_alive())
+    print(server.signal_queue.get(timeout=30))
+    jobs = []
+    for i in range(0, 10):
+        jobs.append(gevent.spawn(send_to_server, i))
+    gevent.joinall(jobs)
+    for i in range(0, len(jobs)):
+        msg = server.message_queue.get(timeout=30)
+        print(get_object_from_message(msg).test_int)
+
