@@ -1,10 +1,8 @@
 
 import pytest
 
-from actors.base_actor import ActorConfig, WorkPoolType, BaseActor
-from messages.actor_maintenance import StopActor
+from actors.base_actor import ActorConfig, WorkPoolType
 from networking.socket_server import SocketServerSecurity
-from system.actor_system import ActorSystem, tell, ask
 
 
 def get_actor_config(global_name):
@@ -20,27 +18,12 @@ def get_actor_config(global_name):
 
 @pytest.fixture
 def system():
-    conf = get_actor_config("system")
-    sys = ActorSystem(conf)
-    p = sys.start()
-    yield (sys, p)
-    if p.is_alive:
-        p.terminate()
-        p.join(timeout=30)
+    pass
 
 
 @pytest.fixture
 def test_actora(system):
-    system_address = system.config.myAddress
-    config = get_actor_config("testa")
-    actor = BaseActor(config, system_address)
-    p = actor.start()
-    yield (actor, p)
-    message = StopActor(target=actor.config.myAddress, sender=system_address)
-    ask(system, message)
-    if p.is_alive:
-        p.terminate()
-        p.join()
+    pass
 
 
 @pytest.mark.order1

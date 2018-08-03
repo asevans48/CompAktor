@@ -9,14 +9,12 @@ from enum import Enum
 from multiprocessing import Process
 from multiprocessing import Queue
 
-import gevent
 from gevent import monkey
 
 from logging_handler import logging
 from logging_handler.logging import package_error_message
 from messages.actor_maintenance import SetActorStatus, StopActor
 from messages.base import BaseMessage
-from messages.poison import POISONPILL
 from messages.routing import Forward, Broadcast, Tell, Ask, ReturnMessage
 from networking.communication import send_message
 from networking.socket_server import SocketServerSecurity
@@ -355,8 +353,7 @@ class BaseActor(object):
         else:
             self.receive(msg, message.sender)
 
-
-    def __receive(self, message, sender):
+    def _receive(self, message, sender):
         """
         The receieve hidden method helper.
 

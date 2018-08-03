@@ -55,8 +55,8 @@ class NetworkedActor(Process, BaseActor):
             message_queue,
             security,
             message_handler=self.__handle_new_message)
-        Process.__init__(self)
         BaseActor.__init__(self, actor_config, system_address, parent)
+        Process.__init__(self)
 
     def __handle_new_message(self, message):
         """
@@ -67,7 +67,7 @@ class NetworkedActor(Process, BaseActor):
         """
         try:
             message, sender = unpack_message(message)
-            self.receive(message, sender)
+            self._receive(message, sender)
         except Exception as e:
             message = package_error_message()
             logger = logging.get_logger()

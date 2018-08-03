@@ -158,53 +158,6 @@ class RemoveActor(BaseMessage):
         super(RemoveActor, self).__init__(target, sender)
         self.actor_address = actor_address
 
-
-class AddChild(BaseMessage):
-    """
-    Add a child to the system
-    """
-
-    def __init__(self, parent_address, child_address, target, sender):
-        """
-        Constructor
-
-        :param parent_address:  The parent address
-        :type parent_address:  ActorAddress
-        :param child_address:  The child address
-        :type child_address:  ActorAddress
-        :param target:  The target address
-        :type target:  ActorAddress
-        :param sender:  The sender address
-        :type sender:  ActorAddress
-        """
-        super(AddChild, self).__init__(target, sender)
-        self.parent_address = parent_address
-        self.child_address = child_address
-
-
-class RemoveChild(BaseMessage):
-    """
-    Remove the child from the parent
-    """
-
-    def __init__(self, parent_address, child_address, target, sender):
-        """
-        Constructor
-
-        :param parent_address:  The parent address
-        :type parent_address:  ActorAddress
-        :param child_address:  The child address
-        :type child_address:  ActorAddress
-        :param target:  The target address
-        :type target:  ActorAddress
-        :param sender:  The sender address
-        :type sender:  ActorAddress
-        """
-        super(RemoveChild, self).__init__(target, sender)
-        self.parent_address = parent_address
-        self.child_address = child_address
-
-
 class SetActorStatus(BaseMessage):
     """
     Set an actor status

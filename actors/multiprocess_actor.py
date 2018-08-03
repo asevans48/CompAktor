@@ -45,7 +45,7 @@ class MultiprocessActor(Process, BaseActor):
                 self.running = False
             else:
                 try:
-                    self.__receive(message, sender)
+                    self._receive(message, sender)
                 except Exception as e:
                     logger = logging.get_logger()
                     message = package_error_message()
