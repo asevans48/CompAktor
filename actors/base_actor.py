@@ -1,5 +1,15 @@
 """
-The base actor
+The base actor.
+
+Every actor
+    - maintains a child registry
+    - may or may not have a work pool
+    - can be stopped
+    - sends and receives messages
+    - has an independent state
+    - runs independent of other actors
+
+The first four components are implemented in BaseActor
 
 @author aevans
 """
@@ -13,7 +23,8 @@ from gevent import monkey
 
 from logging_handler import logging
 from logging_handler.logging import package_error_message
-from messages.actor_maintenance import SetActorStatus, StopActor
+from messages.actor_maintenance import SetActorStatus, StopActor, CreateActor, RegisterActor, UnRegisterGlobalActor, \
+    RegisterGlobalActor, RemoveActor, GetActorStatus
 from messages.base import BaseMessage
 from messages.routing import Forward, Broadcast, Tell, Ask, ReturnMessage
 from networking.communication import send_message
@@ -70,6 +81,7 @@ class BaseActor(object):
         :type parent:  ActorAddress
         """
         monkey.patch_all()
+        self._global_actors = {}
         self.config = actor_config
         self.__system_address = system_address
         self._parent = parent
@@ -186,15 +198,13 @@ class BaseActor(object):
         try:
             actor_class = message.actor_class
             actor_config = message.actor_config
-            parent_address = message.parent_address
+            actor_parent = deepcopy(self._parent)
+            actor_parent.append(self.config.myAddress.address)
             if self.__system_address is None:
                 raise ValueError('System Not Provided')
             actor = actor_class(
-                actor_config, self.__system_address, parent_address)
+                actor_config, self.__system_address, actor_parent)
             p = actor.start()
-            actor_parent = deepcopy(self._parent)
-            actor_parent.append(self.config.myAddress)
-            actor.config.myAddress.parent = actor_parent
             self.__child_registry.add_actor(
                 actor.config.myAddress,
                 ActorStatus.RUNNING,
@@ -254,7 +264,27 @@ class BaseActor(object):
         """
         pass
 
-    def __forward_as_needed(self, message, sender):
+    def _forward_message(self, message, sender):
+        """
+        Forward a message based on the given parent chain.
+
+        :param message:  The message to handle
+        :type message: BaseMessage
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        message_parent = message.target.parent
+        path = deepcopy(message_parent)
+        if self.config.myAddress.address in path:
+            path.append(message.target.address)
+            idx = path.index(self.config.myAddress.address)
+            next = path[idx + 1]
+            if self.__child_registry.get_actor(next):
+                child = self.__child_registry[next]
+                message = Forward(message, path, message.target, sender)
+                child.mailbox.put_nowait(message, message.target, self.config.myAddress)
+
+    def _forward_as_needed(self, message, sender):
         """
         Forward a message if necessary.  Returns forwarded if address
         does not exist on this tree path.
@@ -272,16 +302,7 @@ class BaseActor(object):
         if target.host != host or target.port != port:
             self.send(target, message)
         if target and message.target.address is not self.config.myAddress.address:
-            message_parent = message.target.parent
-            path = deepcopy(message_parent)
-            if self.config.myAddress.address in path:
-                path.append(message.target.address)
-                idx = path.index(self.config.myAddress.address)
-                next = path[idx + 1]
-                if self.__child_registry.get_actor(next):
-                    child = self.__child_registry[next]
-                    message = Forward(message, message.target, sender)
-                    child.mailbox.put_nowait(message, message.target, self.config.myAddress)
+            self._forward_message(message, sender)
             return True
         return False
 
@@ -294,7 +315,7 @@ class BaseActor(object):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        if self.__forward_as_needed() is False:
+        if self._forward_as_needed() is False:
             message_dict = {'message': message, 'sender': sender}
             for child in self.__child_registry.keys():
                 try:
@@ -308,6 +329,8 @@ class BaseActor(object):
                         child['address']
                     )
                     logging.log_error(logger, message)
+        elif self._global_actors.get(message.target.address, None):
+            self._forward_message(message, sender)
 
     def __handle_ask(self, message, sender):
         """
@@ -318,7 +341,7 @@ class BaseActor(object):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        if self.__forward_as_needed(message, sender) is False:
+        if self._forward_as_needed(message, sender) is False:
             msg = message.message
             rval = self.receive(msg)
             if rval and issubclass(rval, BaseMessage):
@@ -327,6 +350,8 @@ class BaseActor(object):
                 my_addr = self.config.myAddress
                 omessage = ReturnMessage(rval, sender, my_addr)
             self.send(sender, omessage)
+        elif self._global_actors.get(message.target.address, None):
+            self._forward_message(message, sender)
 
     def __handle_tell(self, message, sender):
         """
@@ -337,8 +362,10 @@ class BaseActor(object):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        if self.__forward_as_needed(message, sender) is False:
+        if self._forward_as_needed(message, sender) is False:
             self.receive(message.message, sender)
+        elif self._global_actors.get(message.target.address, None):
+            self._forward_message(message, sender)
 
     def __handle_forward(self, message, sender):
         msg = message.message
@@ -353,6 +380,108 @@ class BaseActor(object):
         else:
             self.receive(msg, message.sender)
 
+    def __handle_create_actor(self, message, sender):
+        """
+        Handle a request to create an actor.
+
+        :param message:  The message to handle
+        :type message:  BaseMessage
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        actor_class = message.actor_class
+        actor_config = message.actor_config
+        parent_addr = [self.config.myAddress.address, ]
+        actor = actor_class(actor_config, self.config.myAddress, parent_addr)
+        actor_p = actor.start()
+        self.__child_registry.add_actor(
+            actor.config.myAddress,
+            ActorStatus.RUNNING,
+            actor.config.mailbox,
+            actor_p,
+            parent_addr)
+
+    def __handle_register_global_actor(self, message, sender):
+        """
+        Handle a request to register a global actor.
+
+        :param message:  The message to handle
+        :type message:  BaseMessage
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        actor_address = message.actor_address.address
+        self._global_actors[actor_address] = message.actor_address
+
+    def __handle_unregister_global_actor(self, message, sender):
+        """
+        Handle a request to unregister a global actor.
+
+        :param message:  The message to handle
+        :type message:  BaseMessage
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        actor_address = message.actor_address.address
+        self._global_actors.pop(actor_address)
+
+    def __handle_remove_actor(self, message, sender):
+        """
+        Handle a request to remove an actor.
+
+        :param message:  The message to handle
+        :type message:  BaseMessage
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        actor_address = message.actor_address.address
+        if self.__child_registry.get(actor_address, None):
+            self.__child_registry.remove_actor(actor_address)
+
+    def __handle_register_actor(self, message, sender):
+        """
+        Handle a request to register an actor.
+
+        :param message:  The message to handle
+        :type message:  BaseMessage
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        pass
+
+    def __handle_set_actor_status(self, message, sender):
+        """
+        Handle a request to set a child actor status
+
+        :param message:  The message to handle
+        :type message:  BaseMessage
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        pass
+
+    def __handle_stop_actor(self, message, sender):
+        """
+        Handle a request to stop the entire system.
+
+        :param message:  The message to handle
+        :type message:  BaseMessage
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        pass
+
+    def __handle_get_actor_status(self, message, sender):
+        """
+        Handle a request to get an actor status.
+
+        :param message:  The message to handle
+        :type message:  BaseMessage
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        pass
+
     def _receive(self, message, sender):
         """
         The receieve hidden method helper.
@@ -362,7 +491,7 @@ class BaseActor(object):
         :param sender:  The sender of the message
         :type sender:  ActorAdddress
         """
-        if self.__forward_as_needed(message, sender) is False:
+        if self._forward_as_needed(message, sender) is False:
             try:
                 if type(message) is Broadcast:
                     self.__handle_broadcast(message, sender)
@@ -372,9 +501,27 @@ class BaseActor(object):
                     return self.__handle_ask(message, sender)
                 elif type(message) is Forward:
                     return self.__handle_forward(message, sender)
+                elif type(message) is CreateActor:
+                    self.__handle_create_actor(message, sender)
+                elif type(message) is RegisterActor:
+                    self.__handle_register_actor(message, sender)
+                elif type(message) is UnRegisterGlobalActor:
+                    self.__handle_unregister_global_actor(message, sender)
+                elif type(message) is RegisterGlobalActor:
+                    self.__handle_register_global_actor(message, sender)
+                elif type(message) is RemoveActor:
+                    self.__handle_remove_actor(message, sender)
+                elif type(message) is SetActorStatus:
+                    self.__handle_set_actor_status(message, sender)
+                elif type(message) is StopActor:
+                    self.__handle_stop_actor(message, sender)
+                elif type(message) is GetActorStatus:
+                    self.__handle_get_actor_status(message, sender)
                 else:
                     return self.receive(message, sender)
             except Exception as e:
                 logger = logging.get_logger()
                 message = logging.package_error_message()
                 logging.log_error(logger, message)
+        elif self._global_actors.get(message.target.address, None):
+            self._forward_message(message, sender)

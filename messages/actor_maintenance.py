@@ -198,6 +198,26 @@ class StopActor(BaseMessage):
         super(StopActor, self).__init__(target, sender)
 
 
+class StopChildActor(BaseMessage):
+    """
+    Stop a child actor
+    """
+
+    def __init__(self, child_address, target, sender):
+        """
+        Constructor
+
+        :param child_address:  The address of the child
+        :type child_address:  ActorAddress
+        :param target:  The target actor address
+        :type target:  ActorAddress
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        super(StopChildActor, self).__init__(target, sender)
+        self.child_address = child_address
+
+
 class GetActorStatus(BaseMessage):
     """
     Get an actor status

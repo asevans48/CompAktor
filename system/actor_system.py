@@ -9,10 +9,13 @@ from actors.base_actor import BaseActor
 from actors.networked_actor import NetworkedActor
 from messages.actor_maintenance import CreateActor, RegisterActor, UnRegisterGlobalActor, RegisterGlobalActor, \
     RemoveActor, SetActorStatus, StopActor, GetActorStatus
+from messages.routing import Forward
+from messages.system_maintenance import SetConventionLeader
 from networking.socket_server import SocketServerSecurity
+from registry.registry import ActorRegistry, ActorStatus
 
 
-class ActorSystem(BaseActor):
+class ActorSystem(NetworkedActor):
 
     def __init__(self,
                  actor_config,
@@ -24,6 +27,7 @@ class ActorSystem(BaseActor):
                  signal_queue=Queue(),
                  message_queue=Queue(),
                  security=SocketServerSecurity()):
+        self.__child_registry = ActorRegistry()
         self.is_convention_leader = False
         self.convention_leader = None
         self.__remove_systems = {}
@@ -33,99 +37,25 @@ class ActorSystem(BaseActor):
                 system_address,
                 host,
                 port,
-                parent=[],
-                max_threads=1000,
-                signal_queue=Queue(),
-                message_queue=Queue(),
-                security=SocketServerSecurity())
+                parent,
+                max_threads,
+                signal_queue,
+                message_queue,
+                security)
 
-    def __handle_create_actor(self, message, sender):
+    def __handle_set_convention_leader(self, message, sender):
         """
-        Handle a request to create an actor.
-
-        :param message:  The message to handle
-        :type message:  BaseMessage
-        :param sender:  The message sender
-        :type sender:  ActorAddress
-        """
-        pass
-
-    def __handle_register_global_actor(self, message, sender):
-        """
-        Handle a request to register a global actor.
+        Handle setting of a convention leader.
 
         :param message:  The message to handle
         :type message:  BaseMessage
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        pass
-
-    def __handle_unregister_global_actor(self, message, sender):
-        """
-        Handle a request to unregister a global actor.
-
-        :param message:  The message to handle
-        :type message:  BaseMessage
-        :param sender:  The message sender
-        :type sender:  ActorAddress
-        """
-        pass
-
-    def __handle_remove_actor(self, message, sender):
-        """
-        Handle a request to remove an actor.
-
-        :param message:  The message to handle
-        :type message:  BaseMessage
-        :param sender:  The message sender
-        :type sender:  ActorAddress
-        """
-        pass
-
-    def __handle_register_actor(self, message, sender):
-        """
-        Handle a request to register an actor.
-
-        :param message:  The message to handle
-        :type message:  BaseMessage
-        :param sender:  The message sender
-        :type sender:  ActorAddress
-        """
-        pass
-
-    def __handle_set_actor_status(self, message, sender):
-        """
-        Handle a request to set a child actor status
-
-        :param message:  The message to handle
-        :type message:  BaseMessage
-        :param sender:  The message sender
-        :type sender:  ActorAddress
-        """
-        pass
-
-    def __handle_stop_actor(self, message, sender):
-        """
-        Handle a request to stop the entire system.
-
-        :param message:  The message to handle
-        :type message:  BaseMessage
-        :param sender:  The message sender
-        :type sender:  ActorAddress
-        """
-        pass
-
-    def __handle_get_actor_status(self, message, sender):
-        """
-        Handle a request to get an actor status.
-
-        :param message:  The message to handle
-        :type message:  BaseMessage
-        :param sender:  The message sender
-        :type sender:  ActorAddress
-        """
-        pass
+        self.convention_leader = message.actor_address
+        my_addr = self.config.myAddress
+        if my_addr.host is message.host and my_addr.port is message.port:
+            self.is_convention_leader = True
 
     def receive(self, message, sender):
         """
@@ -136,22 +66,8 @@ class ActorSystem(BaseActor):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        if type(message) is CreateActor:
-            self.__handle_create_actor(message, sender)
-        elif type(message) is RegisterActor:
-            self.__handle_register_actor(message, sender)
-        elif type(message) is UnRegisterGlobalActor:
-            self.__handle_unregister_global_actor(message, sender)
-        elif type(message) is RegisterGlobalActor:
-            self.__handle_register_global_actor(message, sender)
-        elif type(message) is RemoveActor:
-            self.__handle_remove_actor(message, sender)
-        elif type(message) is SetActorStatus:
-            self.__handle_set_actor_status(message, sender)
-        elif type(message) is StopActor:
-            self.__handle_stop_actor(message, sender)
-        elif type(message) is GetActorStatus:
-            self.__handle_get_actor_status(message, sender)
+        if type(message) is SetConventionLeader:
+            self.__handle_set_convention_leader(message, sender)
         else:
             err_msg = 'Message Handle Not Implemented {} @ {}'.format(
                 str(type(message)),
