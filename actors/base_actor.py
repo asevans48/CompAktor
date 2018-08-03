@@ -55,7 +55,7 @@ class ActorConfig(object):
     convention_leader = None
 
 
-class BaseActor(Process):
+class BaseActor(object):
     """
     The base actor.
     """
@@ -394,23 +394,3 @@ class BaseActor(Process):
         msg = message.get('message', None)
         sender = message.get('sender', None)
         return (msg, sender)
-
-    def start(self):
-        """"
-        Run the actor.  Continues to receive until a poisson pill is obtained
-        """
-        self.running = True
-        while self.running:
-            message, sender = self.inbox.get()
-            if type(message) is POISONPILL:
-                self.running = False
-            else:
-                try:
-                    self.__receive(message, sender)
-                except Exception as e:
-                    logger = logging.get_logger()
-                    message = package_error_message()
-                    logging.log_error(logger, message)
-                gevent.sleep(0)
-        addr_object = SetActorStatus(self.myAddress, ActorStatus.STOPPED)
-        self.system_queue.put(addr_object)
