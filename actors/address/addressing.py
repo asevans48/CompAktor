@@ -26,6 +26,7 @@ class ActorAddress():
         self.address = address
         self.host = host
         self.port = port
+        self.parent = []
 
     def __repr__(self):
         return 'ActorAddress :: {} @ {}:{}'.format(self.address, self.host, self.port)

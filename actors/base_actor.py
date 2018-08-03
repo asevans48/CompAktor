@@ -196,6 +196,7 @@ class BaseActor(Process):
             p = actor.start()
             actor_parent = deepcopy(self._parent)
             actor_parent.append(self.config.myAddress)
+            actor.config.myAddress.parent = actor_parent
             self.__child_registry.add_actor(
                 actor.config.myAddress,
                 ActorStatus.RUNNING,
@@ -250,6 +251,32 @@ class BaseActor(Process):
         """
         pass
 
+    def __forward_as_needed(self, message, sender):
+        """
+        Forward a message if necessary
+
+        :param message:  The message to send
+        :type message:  BaseMessage
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        :return:  whether the message was forwarded
+        :rtype:  boolean
+        """
+        target = message.target
+        if target and message.target.address is not self.config.myAddress.address:
+            message_parent = message.target.parent
+            path = deepcopy(message_parent)
+            if self.config.myAddress.address in path:
+                path.append(message.target.address)
+                idx = path.index(self.config.myAddress.address)
+                next = path[idx + 1]
+                if self.__child_registry.get_actor(next):
+                    child = self.__child_registry[next]
+                    message = Forward(message, message.target, sender)
+                    child.mailbox.put_nowait(message, message.target, self.config.myAddress)
+            return True
+        return False
+
     def __handle_broadcast(self, message, sender):
         """
         The message to broadcast
@@ -259,19 +286,20 @@ class BaseActor(Process):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        message_dict = {'message': message, 'sender': sender}
-        for child in self.__child_registry.keys():
-            try:
-                inf = self.__child_registry[child]
-                mailbox = inf['mailbox']
-                mailbox.put_no_wait(message_dict)
-            except Exception as e:
-                logger = logging.get_logger()
-                message = "Failed to Broadcast {} --> {}".format(
-                    self.config.myAddress,
-                    child['address']
-                )
-                logging.log_error(logger, message)
+        if self.__forward_as_needed() is False:
+            message_dict = {'message': message, 'sender': sender}
+            for child in self.__child_registry.keys():
+                try:
+                    inf = self.__child_registry[child]
+                    mailbox = inf['mailbox']
+                    mailbox.put_no_wait(message_dict)
+                except Exception as e:
+                    logger = logging.get_logger()
+                    message = "Failed to Broadcast {} --> {}".format(
+                        self.config.myAddress,
+                        child['address']
+                    )
+                    logging.log_error(logger, message)
 
     def __handle_ask(self, message, sender):
         """
@@ -282,14 +310,15 @@ class BaseActor(Process):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        msg = message.message
-        rval = self.receive(msg)
-        if rval and issubclass(rval, BaseMessage):
-            omessage = Ask(rval)
-        else:
-            my_addr = self.config.myAddress
-            omessage = ReturnMessage(rval, sender, my_addr)
-        self.send(sender, omessage)
+        if self.__forward_as_needed(message, sender) is False:
+            msg = message.message
+            rval = self.receive(msg)
+            if rval and issubclass(rval, BaseMessage):
+                omessage = Ask(rval)
+            else:
+                my_addr = self.config.myAddress
+                omessage = ReturnMessage(rval, sender, my_addr)
+            self.send(sender, omessage)
 
     def __handle_tell(self, message, sender):
         """
@@ -300,7 +329,8 @@ class BaseActor(Process):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        self.receive(message.message, sender)
+        if self.__forward_as_needed(message, sender) is False:
+            self.receive(message.message, sender)
 
     def __handle_forward(self, message, sender):
         msg = message.message
@@ -325,21 +355,22 @@ class BaseActor(Process):
         :param sender:  The sender of the message
         :type sender:  ActorAdddress
         """
-        try:
-            if type(message) is Broadcast:
-                self.__handle_broadcast(message, sender)
-            elif type(message) is Tell:
-                self.__handle_tell(message, sender)
-            elif type(message) is Ask:
-                return self.__handle_ask(message, sender)
-            elif type(message) is Forward:
-                return self.__handle_forward(message, sender)
-            else:
-                return self.receive(message, sender)
-        except Exception as e:
-            logger = logging.get_logger()
-            message = logging.package_error_message()
-            logging.log_error(logger, message)
+        if self.__forward_as_needed(message, sender) is False:
+            try:
+                if type(message) is Broadcast:
+                    self.__handle_broadcast(message, sender)
+                elif type(message) is Tell:
+                    self.__handle_tell(message, sender)
+                elif type(message) is Ask:
+                    return self.__handle_ask(message, sender)
+                elif type(message) is Forward:
+                    return self.__handle_forward(message, sender)
+                else:
+                    return self.receive(message, sender)
+            except Exception as e:
+                logger = logging.get_logger()
+                message = logging.package_error_message()
+                logging.log_error(logger, message)
 
     def __unpack_message(self, message):
         """

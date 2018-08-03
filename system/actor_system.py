@@ -201,12 +201,13 @@ class ActorSystemHandler(object):
         if self.__message_actor is None:
             self.__create_message_actor()
         actor = self.__message_actor
+        actor.config.myAddress.parent = [self.__system_config.myAddress.address, ]
         message = CreateActor(
             actor_class,
             actor_config,
             system_address,
             system_address,
-            actor.config.myAddress)
+            actor.config.myAddress.parent)
         scfg = actor.config.security_config
         m_addr = actor.config.myAddress
         message = package_message(message, m_addr, scfg, system_address)
