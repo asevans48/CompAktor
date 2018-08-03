@@ -32,3 +32,16 @@ def get_message_sender(message):
         sender_list = message['sender']
         return ActorAddress(sender_list[0], sender_list[1], sender_list[2])
     return None
+
+
+def unpack_message(message):
+    """
+    Unpack the message
+    :param message:  The message to unpack
+    :type message:  BaseMessage
+    :return:  A tuple containing the message and sender
+    :rtype:  tuple
+    """
+    message = get_object_from_message(message)
+    sender = get_message_sender(message)
+    return (message, sender)

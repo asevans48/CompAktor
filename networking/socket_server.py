@@ -9,16 +9,16 @@ import base64
 import hashlib
 import hmac
 import json
-from multiprocessing import Process, Queue
+from multiprocessing import Queue
 
 import gevent
-from gevent import monkey
 from gevent import signal
 from gevent.event import Event
 from gevent.pool import Pool
 from gevent.server import StreamServer
 
 from logging_handler import logging
+
 
 #monkey.patch_all()
 

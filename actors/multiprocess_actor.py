@@ -50,7 +50,6 @@ class MultiprocessActor(Process, BaseActor):
                     logger = logging.get_logger()
                     message = package_error_message()
                     logging.log_error(logger, message)
-                gevent.sleep(0)
         addr_object = SetActorStatus(self.myAddress, ActorStatus.STOPPED)
         send_message(
             addr_object,

@@ -381,16 +381,3 @@ class BaseActor(object):
                 logger = logging.get_logger()
                 message = logging.package_error_message()
                 logging.log_error(logger, message)
-
-    def __unpack_message(self, message):
-        """
-        Unpack the received message.
-
-        :param message:  The received message
-        :type message:  dict
-        :return: A tuple of the message and sender address
-        :rtype:  tuple
-        """
-        msg = message.get('message', None)
-        sender = message.get('sender', None)
-        return (msg, sender)
