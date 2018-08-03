@@ -253,7 +253,8 @@ class BaseActor(Process):
 
     def __forward_as_needed(self, message, sender):
         """
-        Forward a message if necessary
+        Forward a message if necessary.  Returns forwarded if address
+        does not exist on this tree path.
 
         :param message:  The message to send
         :type message:  BaseMessage
