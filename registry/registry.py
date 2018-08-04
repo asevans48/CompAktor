@@ -33,6 +33,14 @@ class ActorRegistry(object):
         """
         self.registry = {}
 
+    def get_keys(self):
+        """
+        Return the actor addresses in the system
+        :return:  The registry keys
+        :rtype:  list
+        """
+        return self.registry.keys()
+
     def has_actor(self, address):
         """
         Check if an actor is in the registry

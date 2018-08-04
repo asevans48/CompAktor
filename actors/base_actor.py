@@ -152,7 +152,7 @@ class BaseActor(object):
             message = logging.package_error_message(self.address)
             logging.log_error(logger, message)
         try:
-            child_keys = self.__child_registry.keys()
+            child_keys = self.__child_registry.get_keys()
             if len(child_keys):
                 for key in child_keys:
                     child = self.__child_registry[key]
@@ -231,7 +231,7 @@ class BaseActor(object):
         :rtype:  boolean
         """
         success = False
-        forwarded = self.__forward_as_needed(message, self.myAddress)
+        forwarded = self._forward_as_needed(message, self.address)
         if forwarded is False:
             msg = package_message(
                 message,
