@@ -79,6 +79,17 @@ class NetworkedActor(Process, BaseActor):
         """
         self.socket_server.evt.set()
 
+    def __handle_stop_actor(self, message, sender):
+        """
+        Overrides the base stop for good measure.
+
+        :param message:  The message to handle
+        :type message:  BaseMessage
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        self.__stop()
+
     def start(self):
         """
         Start the networked actor.
