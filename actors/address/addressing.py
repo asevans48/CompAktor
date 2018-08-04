@@ -32,12 +32,14 @@ class ActorAddress():
         return 'ActorAddress :: {} @ {}:{}'.format(self.address, self.host, self.port)
 
 
-def get_address():
+def get_address(system_address):
     """
     Get the actor address
 
     :return:  ActorAddress
     """
+
     global CURRENT_ADDRESS_NUM
     lng = CURRENT_ADDRESS_NUM.get_and_add(1)
-    return ActorAddress(lng)
+    addr = "{}_{}_{}".format(system_address.host, system_address.port, lng)
+    return ActorAddress(addr, system_address.host, system_address.port)

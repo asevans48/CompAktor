@@ -223,16 +223,36 @@ class GetActorStatus(BaseMessage):
     Get an actor status
     """
 
-    def __init__(self, path, target, sender):
+    def __init__(self, actor_address, target, sender):
         """
         Constructor
 
-        :param path:  The path to the actor
-        :type path:  list
+        :param path:  The actor address
+        :type path:  ActorAddress
         :param target:  The target actor
         :type target:  ActorAddress
         :param sender:  The sender actor
         :type sender:  ActorAddress
         """
         super(GetActorStatus, self).__init__(target, sender)
-        self.path = path
+        self.actor_address = actor_address
+
+
+class ActorStatusResponse(BaseMessage):
+    """
+    Returns the actor status.
+    """
+
+    def __init__(self, actor_status, target, sender):
+        """
+        Constructor
+
+        :param actor_status:  The actor status
+        :type actor_status:  ActorStatus
+        :param target:  The target actor
+        :type target:  ActorAddress
+        :param sender:  The sender actor
+        :type sender:  ActorAddress
+        """
+        super(ActorStatusResponse, self).__init__(target, sender)
+        self.actor_status = actor_status

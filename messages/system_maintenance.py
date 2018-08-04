@@ -23,6 +23,45 @@ class SetConventionLeader(BaseMessage):
         self.actor_address = actor_address
 
 
+class RegisterRemoteSystem(BaseMessage):
+    """
+    Registers a remote system
+    """
+
+    def __init__(self, system_address, target, sender):
+        """
+        Constructor
+
+        :param system_address:  The system address
+        :type system_address:  ActorAddress
+        :param target:  Target actor address
+        :type target:  ActorAddress
+        :param sender:  Message sender
+        :type sender:  ActorAddress
+        """
+        super(RegisterRemoteSystem, self).__init__(target, sender)
+        self.system_address = system_address
+
+class UnRegisterRemoteSystem(BaseMessage):
+    """
+    Registers a remote system
+    """
+
+    def __init__(self, system_address, target, sender):
+        """
+        Constructor
+
+        :param system_address:  The system address
+        :type system_address:  ActorAddress
+        :param target:  Target actor address
+        :type target:  ActorAddress
+        :param sender:  Message sender
+        :type sender:  ActorAddress
+        """
+        super(RegisterRemoteSystem, self).__init__(target, sender)
+        self.system_address = system_address
+
+
 class SystemFailure(BaseMessage):
 
     def __init__(self, error, error_code, target, sender):

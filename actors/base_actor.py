@@ -5,11 +5,12 @@ Every actor
     - maintains a child registry
     - may or may not have a work pool
     - can be stopped
+    - can create child actors
     - sends and receives messages
     - has an independent state
     - runs independent of other actors
 
-The first four components are implemented in BaseActor
+The first five components are implemented in BaseActor
 
 @author aevans
 """
@@ -23,8 +24,8 @@ from gevent import monkey
 
 from logging_handler import logging
 from logging_handler.logging import package_error_message
-from messages.actor_maintenance import SetActorStatus, StopActor, CreateActor, RegisterActor, UnRegisterGlobalActor, \
-    RegisterGlobalActor, RemoveActor, GetActorStatus
+from messages.actor_maintenance import SetActorStatus, StopActor, CreateActor, UnRegisterGlobalActor, \
+    RegisterGlobalActor, RemoveActor, GetActorStatus, ActorStatusResponse
 from messages.base import BaseMessage
 from messages.routing import Forward, Broadcast, Tell, Ask, ReturnMessage
 from networking.communication import send_message
@@ -438,17 +439,6 @@ class BaseActor(object):
         if self.__child_registry.get(actor_address, None):
             self.__child_registry.remove_actor(actor_address)
 
-    def __handle_register_actor(self, message, sender):
-        """
-        Handle a request to register an actor.
-
-        :param message:  The message to handle
-        :type message:  BaseMessage
-        :param sender:  The message sender
-        :type sender:  ActorAddress
-        """
-        pass
-
     def __handle_set_actor_status(self, message, sender):
         """
         Handle a request to set a child actor status
@@ -458,7 +448,9 @@ class BaseActor(object):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        pass
+        actor_addr = message.actor_address
+        actor_status = message.status
+        self.__child_registry.set_actor_status(actor_addr, actor_status)
 
     def __handle_stop_actor(self, message, sender):
         """
@@ -469,7 +461,7 @@ class BaseActor(object):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        pass
+        self.__stop()
 
     def __handle_get_actor_status(self, message, sender):
         """
@@ -480,7 +472,12 @@ class BaseActor(object):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        pass
+        actor_address = message.actor_address
+        actor = self.__child_registry.get_actor(actor_address, None)
+        actor_status = actor.get('status', None)
+        my_addr = self.config.myAddress
+        message = ActorStatusResponse(actor_status, sender, my_addr)
+        self.send(sender, message)
 
     def _receive(self, message, sender):
         """
@@ -503,8 +500,6 @@ class BaseActor(object):
                     return self.__handle_forward(message, sender)
                 elif type(message) is CreateActor:
                     self.__handle_create_actor(message, sender)
-                elif type(message) is RegisterActor:
-                    self.__handle_register_actor(message, sender)
                 elif type(message) is UnRegisterGlobalActor:
                     self.__handle_unregister_global_actor(message, sender)
                 elif type(message) is RegisterGlobalActor:
