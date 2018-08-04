@@ -5,6 +5,7 @@ The actor registry.
 """
 from multiprocessing import Queue
 
+from actors.address.addressing import get_address
 from actors.networked_actor import NetworkedActor
 from messages.system_maintenance import SetConventionLeader, RegisterRemoteSystem, UnRegisterRemoteSystem
 from networking.socket_server import SocketServerSecurity
@@ -14,7 +15,6 @@ class ActorSystem(NetworkedActor):
 
     def __init__(self,
                  actor_config,
-                 system_address,
                  host,
                  port,
                  parent=[],
@@ -27,8 +27,6 @@ class ActorSystem(NetworkedActor):
 
         :param actor_config:  The actor configuration
         :type actor_config:  ActorConfig
-        :param system_address:  The address of the actor system
-        :type system_address:  ActorAddress
         :param host:  The system host
         :type host:  str
         :param port:  The system port
@@ -44,11 +42,11 @@ class ActorSystem(NetworkedActor):
         :param security:  The security configuration
         :type security:  SocketServerSecurity
         """
+        system_address = get_address(host, port)
         self.is_convention_leader = False
         self.convention_leader = None
         self.__remote_systems = {}
-        super(NetworkedActor, self).__init(
-                self,
+        super(ActorSystem, self).__init__(
                 actor_config,
                 system_address,
                 host,

@@ -25,6 +25,6 @@ def cleanup_actor(actor_address, system_queue, timeout=15):
         message = ActorCleanup(actor_address)
         system_queue.put(message, timeout=timeout)
     except Exception as e:
-        message = package_error_message()
+        message = package_error_message(actor_address)
         logger = logging.get_logger()
         logging.log_error(logger, message)

@@ -5,7 +5,7 @@ gevent socket server.
 @author aevans
 """
 from multiprocessing import Process
-from multiprocessing.queues import Queue
+from multiprocessing import Queue
 
 from actors.base_actor import BaseActor
 from logging_handler import logging
@@ -69,7 +69,7 @@ class NetworkedActor(Process, BaseActor):
             message, sender = unpack_message(message)
             self._receive(message, sender)
         except Exception as e:
-            message = package_error_message()
+            message = package_error_message(self.address)
             logger = logging.get_logger()
             logging.log_error(logger, message)
 

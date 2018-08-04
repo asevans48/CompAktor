@@ -7,14 +7,14 @@ from pools.base_pool import BasePool
 
 class GreenletPool(BasePool):
 
-    def __init__(self, max_threads=1000):
+    def __init__(self, max_workers=1000):
         """
         Constructor
 
         :param max_threads:  The maximum number of threads in the pool
         :type max_threads:  int
         """
-        self.pool = Pool(max_threads)
+        self.pool = Pool(max_workers)
 
     def submit(self, func, args=None, kwargs=None, call_back=None):
         """

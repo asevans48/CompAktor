@@ -22,6 +22,7 @@ from multiprocessing import Queue
 
 from gevent import monkey
 
+from actors.address.addressing import get_address, ActorAddress
 from logging_handler import logging
 from logging_handler.logging import package_error_message
 from messages.actor_maintenance import SetActorStatus, StopActor, CreateActor, UnRegisterGlobalActor, \
@@ -86,8 +87,9 @@ class BaseActor(object):
         self.config = actor_config
         self.__system_address = system_address
         self._parent = parent
-        self.config.myAddress.host = self.host
-        self.config.myAddress.port = self.port
+        self.address = get_address(system_address.host, system_address.port)
+        self.config.myAddress = self.address
+        print(self.config)
         work_pool_type = self.config.work_pool_type
         max_workers = self.config.max_workers
         self.__work_pool = None
@@ -141,13 +143,13 @@ class BaseActor(object):
                 self.__work_pool.close()
         except Exception as e:
             logger = logging.get_logger()
-            message = logging.package_error_message()
+            message = logging.package_error_message(self.address)
             logging.log_error(logger, message)
         try:
             self.config.mailbox.close()
         except Exception as e:
             logger = logging.get_logger()
-            message = logging.package_error_message()
+            message = logging.package_error_message(self.address)
             logging.log_error(logger, message)
         try:
             child_keys = self.__child_registry.keys()
@@ -163,7 +165,7 @@ class BaseActor(object):
                         child.mailbox.put(wrapper, timeout=30)
                     except Exception as e:
                         logger = logging.get_logger()
-                        message = package_error_message()
+                        message = package_error_message(self.address)
                         logging.log_error(logger, message)
                     finally:
                         p = child['actor_proc']
@@ -172,7 +174,7 @@ class BaseActor(object):
                             p.join(timeout=15)
         except Exception as e:
             logger = logging.get_logger()
-            message = logging.package_error_message()
+            message = logging.package_error_message(self.address)
             logging.log_error(logger, message)
         try:
             message = SetActorStatus(
@@ -183,7 +185,7 @@ class BaseActor(object):
             self.send(self.__system_address, message)
         except Exception as e:
             logger = logging.get_logger()
-            message = logging.package_error_message()
+            message = logging.package_error_message(self.address)
             logging.log_error(logger, message)
 
     def __create_actor(self, message, sender):
@@ -214,7 +216,7 @@ class BaseActor(object):
                 parent=actor_parent)
         except Exception as e:
             logger = logging.get_logger()
-            message = package_error_message()
+            message = package_error_message(self.address)
             logging.log_error(logger, message)
 
     def send(self, target, message):
@@ -242,7 +244,7 @@ class BaseActor(object):
                     send_message(msg, sender, target, self.config.security_config)
                     success = True
                 except Exception as e:
-                    message = logging.package_error_message()
+                    message = logging.package_error_message(self.address)
                     logger = logging.get_logger()
                     logging.log_error(logger, message)
             return success
@@ -516,7 +518,7 @@ class BaseActor(object):
                     return self.receive(message, sender)
             except Exception as e:
                 logger = logging.get_logger()
-                message = logging.package_error_message()
+                message = logging.package_error_message(self.address)
                 logging.log_error(logger, message)
         elif self._global_actors.get(message.target.address, None):
             self._forward_message(message, sender)

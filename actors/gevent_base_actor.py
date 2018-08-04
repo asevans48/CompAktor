@@ -52,7 +52,7 @@ class GeventBaseActor(Greenlet, BaseActor):
                     self._receive(message, sender)
                 except Exception as e:
                     logger = logging.get_logger()
-                    message = package_error_message()
+                    message = package_error_message(self.address)
                     logging.log_error(logger, message)
                 gevent.sleep(0)
         addr_object = SetActorStatus(self.myAddress, ActorStatus.STOPPED)

@@ -25,15 +25,17 @@ class APMConfig(object):
     queue_size = 10
 
 
-def package_error_message():
+def package_error_message(actor_address):
     """
     Package the error message
 
+    :param actor_address: The actor address
+    :type actor_address: ActorAddress
     :return:  The packaged message from traceback
     :rtype:  str
     """
     message = traceback.format_exc()
-    message = package_actor_message(message)
+    message = package_actor_message(actor_address, message)
     return message
 
 
