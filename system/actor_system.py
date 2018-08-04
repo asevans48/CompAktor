@@ -22,6 +22,28 @@ class ActorSystem(NetworkedActor):
                  signal_queue=Queue(),
                  message_queue=Queue(),
                  security=SocketServerSecurity()):
+        """
+        Constructor
+
+        :param actor_config:  The actor configuration
+        :type actor_config:  ActorConfig
+        :param system_address:  The address of the actor system
+        :type system_address:  ActorAddress
+        :param host:  The system host
+        :type host:  str
+        :param port:  The system port
+        :type port:  str
+        :param parent:  The parent actor
+        :type parent:  ActorAddress
+        :param max_threads:  The maximum number of threads
+        :type max_threads:  int
+        :param signal_queue:  The signal queue
+        :type signal_queue:  Queue
+        :param message_queue:  The message queue
+        :type message_queue:  Queue
+        :param security:  The security configuration
+        :type security:  SocketServerSecurity
+        """
         self.is_convention_leader = False
         self.convention_leader = None
         self.__remote_systems = {}
