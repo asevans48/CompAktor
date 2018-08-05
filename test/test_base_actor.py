@@ -1,27 +1,11 @@
 
-import pytest
 import re
+
+import pytest
 
 from actors.address.addressing import ActorAddress
 from actors.base_actor import BaseActor, ActorConfig, WorkPoolType
 from networking.socket_server import SocketServerSecurity
-
-
-class ActorSystemWrapper():
-
-    def __init__(self, system, proc):
-        self.system = system
-        self.proc = proc
-
-
-@pytest.fixture
-def actor_config():
-    config = ActorConfig()
-    config.host = '127.0.0.1'
-    config.port = 0
-    config.security_config = SocketServerSecurity()
-    config.work_pool_type = WorkPoolType.GREENLET
-    return config
 
 
 @pytest.fixture
@@ -35,7 +19,6 @@ def test_actor1():
     actor = BaseActor(actor_config=config, system_address=address)
     return actor
 
-@pytest.mark.order1
 def test_actor_setup(test_actor1):
     assert(re.match('[0-9\.]+\_\d+\_\d+', test_actor1.address.address) is not None)
     assert(type(test_actor1._parent) is list)
