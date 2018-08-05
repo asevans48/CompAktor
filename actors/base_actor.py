@@ -83,6 +83,7 @@ class BaseActor(object):
         :type parent:  ActorAddress
         """
         monkey.patch_all()
+        self.state = ActorStatus.SETUP
         self._global_actors = {}
         self.config = actor_config
         self.__system_address = system_address
@@ -464,6 +465,7 @@ class BaseActor(object):
         :type sender:  ActorAddress
         """
         self.__stop()
+        self.state = ActorStatus.STOPPED
 
     def __handle_get_actor_status(self, message, sender):
         """
