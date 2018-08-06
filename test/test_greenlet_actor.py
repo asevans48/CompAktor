@@ -275,17 +275,3 @@ def test_stop_actor(test_actor):
     msg = test_actor.signal_queue.get(timeout=30)
     assert(type(msg) is ActorStopped)
     test_actor.kill()
-
-
-if __name__ == "__main__":
-    config = ActorConfig()
-    config.host = ''
-    config.port = 12000
-    config.mailbox = gevent.queue.Queue()
-    config.work_pool_type = WorkPoolType.GREENLET
-    config.props = {'signal_queue': gevent.queue.Queue()}
-    test_actor = TestActor(config, None)
-    test_actor.start()
-    config.props['signal_queue'].get(timeout=30)
-    test_broadcast(test_actor)
-    test_stop_actor(test_actor)
