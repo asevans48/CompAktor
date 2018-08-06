@@ -6,10 +6,12 @@ import pytest
 from actors.address.addressing import ActorAddress, get_address
 from actors.base_actor import ActorConfig, WorkPoolType
 from actors.greenlet_base_actor import GreenletBaseActor
-from messages.actor_maintenance import ActorStopped, CreateActor, ActorStarted, RemoveActor
+from messages.actor_maintenance import ActorStopped, CreateActor, ActorStarted, RemoveActor, SetActorStatus, \
+    SetChildStatus
 from messages.base import BaseMessage
 from messages.poison import POISONPILL
-from messages.routing import Forward
+from messages.routing import Forward, Broadcast
+from registry.registry import ActorStatus
 
 
 class ActorChildren(BaseMessage):
@@ -25,33 +27,17 @@ class GetChildren(BaseMessage):
         super(GetChildren, self).__init__(target, sender)
 
 
+class GetChildStatus(BaseMessage):
+
+    def __init__(self, child_address, target, sender):
+        super(GetChildStatus, self).__init__(target, sender)
+        self.child_address = child_address
+
+
 class TestPingPongMessage(BaseMessage):
 
     def __init__(self, target, sender):
         super(TestPingPongMessage, self).__init__(target, sender)
-
-
-class TestActor(GreenletBaseActor):
-
-    def __init__(self, actor_config, system_address, signal_queue=Queue()):
-        super(TestActor, self).__init__(actor_config, system_address)
-        self.signal_queue = actor_config.props['signal_queue']
-
-    def _post_stop(self):
-        addr = self.config.myAddress
-        self.signal_queue.put_nowait(ActorStopped(self.state, None, addr))
-
-    def __handle_get_children(self, message, sender):
-        addr = self.config.myAddress
-        children = self._child_registry.get_keys()
-        msg = ActorChildren(children, sender, addr)
-        self.signal_queue.put(msg)
-
-    def receive(self, message, sender):
-        if type(message) is TestPingPongMessage:
-            self.signal_queue.put_nowait(TestPingPongMessage)
-        elif type(message) is GetChildren:
-            self.__handle_get_children(message, sender)
 
 
 class TestActor(GreenletBaseActor):
@@ -71,12 +57,21 @@ class TestActor(GreenletBaseActor):
         msg = ActorChildren(children, sender, addr)
         self.signal_queue.put(msg)
 
+    def __handle_get_child_status(self, message, sender):
+        addr = message.child_address
+        status = None
+        if self._child_registry.get_actor(addr):
+            status = self._child_registry.get_actor(addr)['status']
+        self.signal_queue.put_nowait(status)
+
+
     def receive(self, message, sender):
         if type(message) is TestPingPongMessage:
             self.signal_queue.put_nowait(TestPingPongMessage)
         elif type(message) is GetChildren:
             self.__handle_get_children(message, sender)
-
+        elif type(message) is GetChildStatus:
+            self.__handle_get_child_status(message, sender)
 
 
 class TestReceive(GreenletBaseActor):
@@ -112,11 +107,6 @@ def test_actor():
     config.myAddress = ActorAddress('testa', config.host, config.port)
     actor = TestActor(config, None)
     return actor
-
-
-@pytest.fixture
-def test_system():
-    return None
 
 
 @pytest.mark.order1
@@ -183,6 +173,7 @@ def test_create_actor(test_actor):
 
 @pytest.mark.order5
 def test_forward_to_child(test_actor):
+    addr = test_actor.address
     nconfig = ActorConfig()
     nconfig.host = ''
     nconfig.port = 12000
@@ -201,29 +192,7 @@ def test_forward_to_child(test_actor):
     assert (len(list(msg.children)) == 0)
     assert (msg.sender.__eq__(nconfig.myAddress))
 
-
 @pytest.mark.order6
-def test_forward_to_system(test_actor, test_system):
-    nconfig = ActorConfig()
-    nconfig.host = ''
-    nconfig.port = 12000
-    nconfig.mailbox = gevent.queue.Queue()
-    nconfig.myAddress = get_address(nconfig.host, nconfig.port)
-    nconfig.work_pool_type = WorkPoolType.GREENLET
-    nconfig.props = {'signal_queue': gevent.queue.Queue()}
-    msg = CreateActor(TestActor, nconfig, [], config.myAddress, None)
-    test_actor.config.mailbox.put((msg, addr))
-    msg = GetChildren(nconfig.myAddress.address, None)
-    chain = [nconfig.myAddress.address, ]
-    msg = Forward(msg, chain, nconfig.myAddress, None)
-    test_actor.config.mailbox.put((msg, addr))
-    msg = nconfig.props['signal_queue'].get(timeout=30)
-    msg = nconfig.props['signal_queue'].get(timeout=30)
-    assert(len(list(msg.children)) == 0)
-    assert(msg.sender.__eq__(nconfig.myAddress))
-
-
-@pytest.mark.order7
 def test_remove_actor(test_actor):
     addr = test_actor.config.myAddress
     nconfig = ActorConfig()
@@ -232,6 +201,7 @@ def test_remove_actor(test_actor):
     nconfig.mailbox = gevent.queue.Queue()
     nconfig.work_pool_type = WorkPoolType.GREENLET
     nconfig.props = {'signal_queue': gevent.queue.Queue()}
+    nconfig.myAddress = get_address(nconfig.host, nconfig.port)
     msg = CreateActor(TestActor, nconfig, [], config.myAddress, None)
     test_actor.config.mailbox.put((msg, addr))
     msg = GetChildren(addr, None)
@@ -246,10 +216,48 @@ def test_remove_actor(test_actor):
     msg = test_actor.signal_queue.get(timeout=30)
     assert(nconfig.myAddress.address not in list(msg.children))
 
-@pytest.mark.order8
-def test_set_actor_status(test_actor):
-    pass
 
+@pytest.mark.order7
+def test_set_actor_status(test_actor):
+    addr = test_actor.address
+    nconfig = ActorConfig()
+    nconfig.host = ''
+    nconfig.port = 12000
+    nconfig.mailbox = gevent.queue.Queue()
+    nconfig.work_pool_type = WorkPoolType.GREENLET
+    nconfig.props = {'signal_queue': gevent.queue.Queue()}
+    nconfig.myAddress = get_address(nconfig.host, nconfig.port)
+    msg = CreateActor(TestActor, nconfig, [], config.myAddress, None)
+    test_actor.config.mailbox.put((msg, addr))
+    msg = SetActorStatus(
+        nconfig.myAddress, ActorStatus.UNREACHABLE, addr, None)
+    test_actor.config.mailbox.put_nowait((msg, addr))
+    msg = GetChildStatus(nconfig.myAddress, addr, None)
+    test_actor.config.mailbox.put_nowait((msg, addr))
+    msg = test_actor.config.props['signal_queue'].get(timeout=30)
+    assert(type(msg) is ActorStatus)
+    assert(msg == ActorStatus.UNREACHABLE)
+
+@pytest.mark.order8
+def test_broadcast(test_actor):
+    addr = test_actor.address
+    nconfig = ActorConfig()
+    nconfig.host = ''
+    nconfig.port = 12000
+    nconfig.mailbox = gevent.queue.Queue()
+    nconfig.work_pool_type = WorkPoolType.GREENLET
+    nconfig.props = {'signal_queue': gevent.queue.Queue()}
+    nconfig.myAddress = get_address(nconfig.host, nconfig.port)
+    msg = CreateActor(TestActor, nconfig, [], config.myAddress, None)
+    test_actor.config.mailbox.put((msg, addr))
+    msg = SetChildStatus(
+        nconfig.myAddress, ActorStatus.UNREACHABLE, addr, None)
+    test_actor.config.mailbox.put_nowait((msg, addr))
+    msg = GetChildStatus(nconfig.myAddress, addr, None)
+    msg = Broadcast(msg, addr, None)
+    msg = nconfig.props['signal_queue'].get(timeout=30)
+    assert(type(msg) is ActorStatus)
+    assert(msg == ActorStatus.UNREACHABLE)
 
 @pytest.mark.order9
 def test_stop_actor(test_actor):
@@ -275,5 +283,5 @@ if __name__ == "__main__":
     test_actor = TestActor(config, None)
     test_actor.start()
     config.props['signal_queue'].get(timeout=30)
-    test_remove_actor(test_actor)
+    test_broadcast(test_actor)
     test_stop_actor(test_actor)

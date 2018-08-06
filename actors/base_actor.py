@@ -27,7 +27,7 @@ from actors.address.addressing import get_address, ActorAddress
 from logging_handler import logging
 from logging_handler.logging import package_error_message
 from messages.actor_maintenance import SetActorStatus, StopActor, CreateActor, UnRegisterGlobalActor, \
-    RegisterGlobalActor, RemoveActor, GetActorStatus, ActorStatusResponse
+    RegisterGlobalActor, RemoveActor, GetActorStatus, ActorStatusResponse, ActorState
 from messages.base import BaseMessage
 from messages.routing import Forward, Broadcast, Tell, Ask, ReturnMessage
 from networking.communication import send_message
@@ -337,6 +337,18 @@ class BaseActor(object):
             child['mailbox'].put_nowait((message, sender))
             return True
         return False
+
+    def _handle_get_actor_state(self, message, sender):
+        """
+        Gets the actor state
+
+        :param message:  The message to handle
+        :type message:  GetActorState
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        msg = ActorState(self.state, sender, message.target)
+        self.send(message.target, msg)
 
     def _handle_broadcast(self, message, sender):
         """

@@ -294,3 +294,60 @@ class ActorStarted(BaseMessage):
         """
         super(ActorStarted, self).__init__(target, sender)
 
+
+class GetActorState(BaseMessage):
+    """
+    Used to obtain an actors state
+    """
+
+    def __init__(self, target, sender):
+        """
+        Constructor
+
+        :param target:  The target actor
+        :type target:  ActorAddress
+        :param sender:  The sender actor
+        :type sender:  ActorAddress
+        """
+        super(GetActorState, self).__init__(target, sender)
+
+
+class ActorState(BaseMessage):
+    """
+    The actor state
+    """
+
+    def __init__(self, state, target, sender):
+        """
+        Constructor
+
+        :param target:  The target actor
+        :type target:  ActorAddress
+        :param sender:  The sender actor
+        :type sender:  ActorAddress
+        """
+        super(ActorState, self).__init__(target, sender)
+        self.state = state
+
+
+class SetChildStatus(BaseMessage):
+    """
+    Set a child status
+    """
+
+    def __init__(self, child_address, status, target, sender):
+        """
+        Constructor
+
+        :param child_address:  The child address
+        :type child_address:  ActorAddress
+        :param status:  The status to set
+        :type status:  ActorStatus
+        :param target:  The target actor
+        :type target:  ActorAddress
+        :param sender:  The sender actor
+        :type sender:  ActorAddress
+        """
+        super(SetChildStatus, self).__init__(target, sender)
+        self.child_address = child_address
+        self.status = status
