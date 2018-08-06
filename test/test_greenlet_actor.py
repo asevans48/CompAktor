@@ -6,8 +6,7 @@ import pytest
 from actors.address.addressing import ActorAddress, get_address
 from actors.base_actor import ActorConfig, WorkPoolType
 from actors.greenlet_base_actor import GreenletBaseActor
-from messages.actor_maintenance import ActorStopped, CreateActor, ActorStarted, RemoveActor, SetActorStatus, \
-    SetChildStatus
+from messages.actor_maintenance import ActorStopped, CreateActor, ActorStarted, RemoveActor, SetActorStatus
 from messages.base import BaseMessage
 from messages.poison import POISONPILL
 from messages.routing import Forward, Broadcast
@@ -157,6 +156,7 @@ def test_create_actor(test_actor):
     :param test_actor:  The test actor
     :type test_actor:  TestActor
     """
+    config = test_actor.config
     addr = test_actor.config.myAddress
     nconfig = ActorConfig()
     nconfig.host = ''
@@ -173,6 +173,7 @@ def test_create_actor(test_actor):
 
 @pytest.mark.order5
 def test_forward_to_child(test_actor):
+    config = test_actor.config
     addr = test_actor.address
     nconfig = ActorConfig()
     nconfig.host = ''
@@ -194,6 +195,7 @@ def test_forward_to_child(test_actor):
 
 @pytest.mark.order6
 def test_remove_actor(test_actor):
+    config = test_actor.config
     addr = test_actor.config.myAddress
     nconfig = ActorConfig()
     nconfig.host = ''
@@ -219,6 +221,7 @@ def test_remove_actor(test_actor):
 
 @pytest.mark.order7
 def test_set_actor_status(test_actor):
+    config = test_actor.config
     addr = test_actor.address
     nconfig = ActorConfig()
     nconfig.host = ''
@@ -240,6 +243,7 @@ def test_set_actor_status(test_actor):
 
 @pytest.mark.order8
 def test_broadcast(test_actor):
+    config = test_actor.config
     addr = test_actor.address
     nconfig = ActorConfig()
     nconfig.host = ''
