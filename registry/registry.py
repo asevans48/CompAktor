@@ -6,6 +6,7 @@ Actor registry
 import traceback
 from enum import Enum
 
+from actors.address.addressing import ActorAddress
 from logging_handler import logging
 from logging_handler.logging import package_actor_message, package_error_message
 
@@ -153,4 +154,6 @@ class ActorRegistry(object):
         :type default:  object
         :rtype:  dict
         """
-        return self.registry.get(actor_address.address, default)
+        if type(actor_address) is ActorAddress:
+            actor_address = actor_address.address
+        return self.registry.get(actor_address, default)

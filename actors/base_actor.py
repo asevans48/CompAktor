@@ -15,6 +15,7 @@ The first five components are implemented in BaseActor
 @author aevans
 """
 import atexit
+import multiprocessing
 from copy import deepcopy
 from enum import Enum
 from multiprocessing import Process
@@ -64,6 +65,7 @@ class ActorConfig(object):
     mailbox = Queue()
     myAddress = None
     convention_leader = None
+    props = {}
 
 
 class BaseActor(object):
@@ -86,15 +88,20 @@ class BaseActor(object):
         self.state = ActorStatus.SETUP
         self._global_actors = {}
         self.config = actor_config
-        self.__system_address = system_address
+        self._system_address = system_address
         self._parent = parent
-        self.address = get_address(system_address.host, system_address.port)
-        self.config.myAddress = self.address
-        print(self.config)
+        self.address = self.config.myAddress
+        if self.config.myAddress is None:
+            self.address = get_address('', 0)
+            if self._system_address:
+                self.address = get_address(system_address.host, system_address.port)
+            self.config.myAddress = self.address
+        else:
+            self.address = self.config.myAddress
         work_pool_type = self.config.work_pool_type
         max_workers = self.config.max_workers
         self.__work_pool = None
-        self.__child_registry = ActorRegistry()
+        self._child_registry = ActorRegistry()
         if work_pool_type == WorkPoolType.GREENLET:
             self.__work_pool = GreenletPool(
                 max_workers=max_workers)
@@ -113,7 +120,13 @@ class BaseActor(object):
         :return:  The system address
         :rtype:  ActorAddress
         """
-        return self.__system_address
+        return self._system_address
+
+    def _post_stop(self):
+        """
+        Called after stop but before cleanup.
+        """
+        pass
 
     def _get_parent(self):
         """
@@ -135,6 +148,20 @@ class BaseActor(object):
             logging.setup_apm(self.config.apm_config)
         logging.add_console_handler(logger, self.config.log_config)
 
+    def _handle_stop_child(self, actor):
+        """
+        Stop the child actor
+        :param actor:  The actor to stop
+        :type actor:  BaseActor
+        """
+        try:
+            actor['actor_p'].terminate()
+            actor['actor_p'].join()
+        except Exception as e:
+            message = package_error_message(actor['address'])
+            logger = logging.get_logger()
+            logging.log_error(logger, message)
+
     def _cleanup(self):
         """
         Called at exit to cause the actor to perform cleanup work.
@@ -147,43 +174,39 @@ class BaseActor(object):
             message = logging.package_error_message(self.address)
             logging.log_error(logger, message)
         try:
-            self.config.mailbox.close()
+            if type(self.config.mailbox) is multiprocessing.Queue:
+                self.config.mailbox.close()
         except Exception as e:
             logger = logging.get_logger()
             message = logging.package_error_message(self.address)
             logging.log_error(logger, message)
         try:
-            child_keys = self.__child_registry.get_keys()
+            child_keys = self._child_registry.get_keys()
             if len(child_keys):
                 for key in child_keys:
-                    child = self.__child_registry[key]
+                    child = self._child_registry.get_actor(key)
                     try:
                         message = StopActor(child['address'], self.config.myAddress)
-                        addr_chain = deepcopy(self._parent)
-                        addr_chain.append(child['address'])
-                        wrapper = Forward(
-                            message, addr_chain, child['address'], self.config.myAddress)
-                        child.mailbox.put(wrapper, timeout=30)
+                        addr = self.config.myAddress
+                        child['mailbox'].put_nowait((message, addr))
                     except Exception as e:
                         logger = logging.get_logger()
                         message = package_error_message(self.address)
                         logging.log_error(logger, message)
                     finally:
-                        p = child['actor_proc']
-                        if p:
-                            p.terminate()
-                            p.join(timeout=15)
+                        self._handle_stop_child(child)
         except Exception as e:
             logger = logging.get_logger()
             message = logging.package_error_message(self.address)
             logging.log_error(logger, message)
         try:
-            message = SetActorStatus(
-                self.config.myAddress,
-                ActorStatus.STOPPED,
-                self.__system_address,
-                self.config.myAddress)
-            self.send(self.__system_address, message)
+            if self._system_address:
+                message = SetActorStatus(
+                    self.config.myAddress,
+                    ActorStatus.STOPPED,
+                    self._system_address,
+                    self.config.myAddress)
+                self.send(self._system_address, message)
         except Exception as e:
             logger = logging.get_logger()
             message = logging.package_error_message(self.address)
@@ -204,12 +227,10 @@ class BaseActor(object):
             actor_config = message.actor_config
             actor_parent = deepcopy(self._parent)
             actor_parent.append(self.config.myAddress.address)
-            if self.__system_address is None:
-                raise ValueError('System Not Provided')
             actor = actor_class(
-                actor_config, self.__system_address, actor_parent)
+                actor_config, self._system_address, actor_parent)
             p = actor.start()
-            self.__child_registry.add_actor(
+            self._child_registry.add_actor(
                 actor.config.myAddress,
                 ActorStatus.RUNNING,
                 actor.config.mailbox,
@@ -236,8 +257,8 @@ class BaseActor(object):
         if forwarded is False:
             msg = package_message(
                 message,
-                self.myAddress,
-                self.server_security,
+                self.address,
+                self.config.server_security,
                 target)
             if target and target.host and target.port:
                 try:
@@ -283,8 +304,8 @@ class BaseActor(object):
             path.append(message.target.address)
             idx = path.index(self.config.myAddress.address)
             next = path[idx + 1]
-            if self.__child_registry.get_actor(next):
-                child = self.__child_registry[next]
+            if self._child_registry.get_actor(next):
+                child = self._child_registry[next]
                 message = Forward(message, path, message.target, sender)
                 child.mailbox.put_nowait(message, message.target, self.config.myAddress)
 
@@ -300,17 +321,24 @@ class BaseActor(object):
         :return:  whether the message was forwarded
         :rtype:  boolean
         """
+        if message.target.__eq__(self.address):
+            return False
         target = message.target
-        host = self.config.myAddress.host
-        port = self.config.myAddress.port
-        if target.host != host or target.port != port:
-            self.send(target, message)
-        if target and message.target.address is not self.config.myAddress.address:
-            self._forward_message(message, sender)
+        if target.host and target.port != 0:
+            host = self.config.myAddress.host
+            port = self.config.myAddress.port
+            if target.host != host or target.port != port:
+                self.send(target, message)
+            if target and message.target.address is not self.config.myAddress.address:
+                self._forward_message(message, sender)
+                return True
+        elif self._child_registry.get_actor(target, None):
+            child = self._child_registry.get_actor(target.address)
+            child['mailbox'].put_nowait((message, sender))
             return True
         return False
 
-    def __handle_broadcast(self, message, sender):
+    def _handle_broadcast(self, message, sender):
         """
         The message to broadcast
 
@@ -320,12 +348,11 @@ class BaseActor(object):
         :type sender:  ActorAddress
         """
         if self._forward_as_needed() is False:
-            message_dict = {'message': message, 'sender': sender}
-            for child in self.__child_registry.keys():
+            for child in self._child_registry.keys():
                 try:
-                    inf = self.__child_registry[child]
+                    inf = self._child_registry[child]
                     mailbox = inf['mailbox']
-                    mailbox.put_no_wait(message_dict)
+                    mailbox.put_no_wait((message, sender))
                 except Exception as e:
                     logger = logging.get_logger()
                     message = "Failed to Broadcast {} --> {}".format(
@@ -336,7 +363,7 @@ class BaseActor(object):
         elif self._global_actors.get(message.target.address, None):
             self._forward_message(message, sender)
 
-    def __handle_ask(self, message, sender):
+    def _handle_ask(self, message, sender):
         """
         The message to ask
 
@@ -357,7 +384,7 @@ class BaseActor(object):
         elif self._global_actors.get(message.target.address, None):
             self._forward_message(message, sender)
 
-    def __handle_tell(self, message, sender):
+    def _handle_tell(self, message, sender):
         """
         The message to tell
 
@@ -371,20 +398,23 @@ class BaseActor(object):
         elif self._global_actors.get(message.target.address, None):
             self._forward_message(message, sender)
 
-    def __handle_forward(self, message, sender):
+    def _handle_forward(self, message, sender):
         msg = message.message
         chain = message.address_chain
         if chain and len(chain) > 0:
             addr = chain.pop(0)
-            if self.__child_registry.has_actor(addr):
-                target_addr = self.__child_registry.get_actor(addr)
+            if self._child_registry.has_actor(addr):
+                target_addr = self._child_registry.get_actor(addr)
                 target_addr = target_addr['address']
                 new_fwd = Forward(msg, chain, target_addr, sender)
-                self.send(target_addr, new_fwd)
+                mbox = self._child_registry.get_actor(addr)['mailbox']
+                mbox.put_no_wait((new_fwd, target_addr))
+            elif addr == self.address.address:
+                self.receive(msg, sender)
         else:
             self.receive(msg, message.sender)
 
-    def __handle_create_actor(self, message, sender):
+    def _handle_create_actor(self, message, sender):
         """
         Handle a request to create an actor.
 
@@ -398,14 +428,14 @@ class BaseActor(object):
         parent_addr = [self.config.myAddress.address, ]
         actor = actor_class(actor_config, self.config.myAddress, parent_addr)
         actor_p = actor.start()
-        self.__child_registry.add_actor(
+        self._child_registry.add_actor(
             actor.config.myAddress,
             ActorStatus.RUNNING,
             actor.config.mailbox,
             actor_p,
             parent_addr)
 
-    def __handle_register_global_actor(self, message, sender):
+    def _handle_register_global_actor(self, message, sender):
         """
         Handle a request to register a global actor.
 
@@ -417,7 +447,7 @@ class BaseActor(object):
         actor_address = message.actor_address.address
         self._global_actors[actor_address] = message.actor_address
 
-    def __handle_unregister_global_actor(self, message, sender):
+    def _handle_unregister_global_actor(self, message, sender):
         """
         Handle a request to unregister a global actor.
 
@@ -429,9 +459,9 @@ class BaseActor(object):
         actor_address = message.actor_address.address
         self._global_actors.pop(actor_address)
 
-    def __handle_remove_actor(self, message, sender):
+    def _handle_remove_actor(self, message, sender):
         """
-        Handle a request to remove an actor.
+        Handle a request to remove an actor.  Force it to stop.
 
         :param message:  The message to handle
         :type message:  BaseMessage
@@ -439,10 +469,13 @@ class BaseActor(object):
         :type sender:  ActorAddress
         """
         actor_address = message.actor_address.address
-        if self.__child_registry.get(actor_address, None):
-            self.__child_registry.remove_actor(actor_address)
+        if self._child_registry.get_actor(message.actor_address, None):
+            msg = StopActor(message.actor_address, sender)
+            child = self._child_registry.get_actor(message.actor_address)
+            child['mailbox'].put_nowait((msg, sender))
+            self._child_registry.remove_actor(message.actor_address)
 
-    def __handle_set_actor_status(self, message, sender):
+    def _handle_set_actor_status(self, message, sender):
         """
         Handle a request to set a child actor status
 
@@ -453,9 +486,9 @@ class BaseActor(object):
         """
         actor_addr = message.actor_address
         actor_status = message.status
-        self.__child_registry.set_actor_status(actor_addr, actor_status)
+        self._child_registry.set_actor_status(actor_addr, actor_status)
 
-    def __handle_stop_actor(self, message, sender):
+    def _handle_stop_actor(self, message, sender):
         """
         Handle a request to stop the entire system.
 
@@ -467,7 +500,7 @@ class BaseActor(object):
         self.__stop()
         self.state = ActorStatus.STOPPED
 
-    def __handle_get_actor_status(self, message, sender):
+    def _handle_get_actor_status(self, message, sender):
         """
         Handle a request to get an actor status.
 
@@ -477,7 +510,7 @@ class BaseActor(object):
         :type sender:  ActorAddress
         """
         actor_address = message.actor_address
-        actor = self.__child_registry.get_actor(actor_address, None)
+        actor = self._child_registry.get_actor(actor_address, None)
         actor_status = actor.get('status', None)
         my_addr = self.config.myAddress
         message = ActorStatusResponse(actor_status, sender, my_addr)
@@ -495,27 +528,27 @@ class BaseActor(object):
         if self._forward_as_needed(message, sender) is False:
             try:
                 if type(message) is Broadcast:
-                    self.__handle_broadcast(message, sender)
+                    self._handle_broadcast(message, sender)
                 elif type(message) is Tell:
-                    self.__handle_tell(message, sender)
+                    self._handle_tell(message, sender)
                 elif type(message) is Ask:
-                    return self.__handle_ask(message, sender)
+                    return self._handle_ask(message, sender)
                 elif type(message) is Forward:
-                    return self.__handle_forward(message, sender)
+                    return self._handle_forward(message, sender)
                 elif type(message) is CreateActor:
-                    self.__handle_create_actor(message, sender)
+                    self._handle_create_actor(message, sender)
                 elif type(message) is UnRegisterGlobalActor:
-                    self.__handle_unregister_global_actor(message, sender)
+                    self._handle_unregister_global_actor(message, sender)
                 elif type(message) is RegisterGlobalActor:
-                    self.__handle_register_global_actor(message, sender)
+                    self._handle_register_global_actor(message, sender)
                 elif type(message) is RemoveActor:
-                    self.__handle_remove_actor(message, sender)
+                    self._handle_remove_actor(message, sender)
                 elif type(message) is SetActorStatus:
-                    self.__handle_set_actor_status(message, sender)
+                    self._handle_set_actor_status(message, sender)
                 elif type(message) is StopActor:
-                    self.__handle_stop_actor(message, sender)
+                    self._handle_stop_actor(message, sender)
                 elif type(message) is GetActorStatus:
-                    self.__handle_get_actor_status(message, sender)
+                    self._handle_get_actor_status(message, sender)
                 else:
                     return self.receive(message, sender)
             except Exception as e:

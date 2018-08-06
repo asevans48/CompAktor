@@ -31,6 +31,9 @@ class ActorAddress():
     def __repr__(self):
         return 'ActorAddress :: {} @ {}:{}'.format(self.address, self.host, self.port)
 
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
+
 
 def get_address(host, port):
     """

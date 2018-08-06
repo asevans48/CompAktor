@@ -256,3 +256,41 @@ class ActorStatusResponse(BaseMessage):
         """
         super(ActorStatusResponse, self).__init__(target, sender)
         self.actor_status = actor_status
+
+
+class ActorStopped(BaseMessage):
+    """
+    Used to signal that an actor stopped
+    """
+
+    def __init__(self, actor_status, target, sender):
+        """
+        Constructor
+
+        :param actor_status: There are many potential stopped statuses
+        :type actor_status:  ActorStatus
+        :param target:  The target actor
+        :type target:  ActorAddress
+        :param sender:  The sender actor
+        :type sender:  ActorAddress
+        """
+        super(ActorStopped, self).__init__(target, sender)
+        self.status = actor_status
+
+
+class ActorStarted(BaseMessage):
+    """
+    Used to signal that an actor stopped
+    """
+
+    def __init__(self, target, sender):
+        """
+        Constructor
+
+        :param target:  The target actor
+        :type target:  ActorAddress
+        :param sender:  The sender actor
+        :type sender:  ActorAddress
+        """
+        super(ActorStarted, self).__init__(target, sender)
+
