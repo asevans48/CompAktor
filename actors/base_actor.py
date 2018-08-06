@@ -324,17 +324,14 @@ class BaseActor(object):
         if message.target.__eq__(self.address):
             return False
         target = message.target
-        if target.host and target.port != 0:
-            host = self.config.myAddress.host
-            port = self.config.myAddress.port
-            if target.host != host or target.port != port:
-                self.send(target, message)
-            if target and message.target.address is not self.config.myAddress.address:
-                self._forward_message(message, sender)
-                return True
-        elif self._child_registry.get_actor(target, None):
+        if self._child_registry.get_actor(target, None):
             child = self._child_registry.get_actor(target.address)
             child['mailbox'].put_nowait((message, sender))
+            return True
+        elif target.__eq__(self.address) is False\
+                and target.host is not None\
+                and target.port != 0:
+            self.send(target, message)
             return True
         return False
 
@@ -359,19 +356,22 @@ class BaseActor(object):
         :param sender:  The message sender
         :type sender:  ActorAddress
         """
-        if self._forward_as_needed() is False:
-            for child in self._child_registry.keys():
+        fwd = self._forward_as_needed(message, sender)
+        if fwd is False:
+            for child in self._child_registry.get_keys():
                 try:
-                    inf = self._child_registry[child]
+                    inf = self._child_registry.get_actor(child)
                     mailbox = inf['mailbox']
-                    mailbox.put_no_wait((message, sender))
+                    mailbox.put_nowait((message, sender))
                 except Exception as e:
                     logger = logging.get_logger()
                     message = "Failed to Broadcast {} --> {}".format(
                         self.config.myAddress,
-                        child['address']
+                        child
                     )
                     logging.log_error(logger, message)
+            msg = message.message
+            self.receive(msg, sender)
         elif self._global_actors.get(message.target.address, None):
             self._forward_message(message, sender)
 
@@ -537,7 +537,8 @@ class BaseActor(object):
         :param sender:  The sender of the message
         :type sender:  ActorAdddress
         """
-        if self._forward_as_needed(message, sender) is False:
+        fwd = self._forward_as_needed(message, sender)
+        if fwd is False:
             try:
                 if type(message) is Broadcast:
                     self._handle_broadcast(message, sender)

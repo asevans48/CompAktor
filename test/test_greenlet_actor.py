@@ -250,14 +250,18 @@ def test_broadcast(test_actor):
     nconfig.myAddress = get_address(nconfig.host, nconfig.port)
     msg = CreateActor(TestActor, nconfig, [], config.myAddress, None)
     test_actor.config.mailbox.put((msg, addr))
-    msg = SetChildStatus(
+    msg = SetActorStatus(
         nconfig.myAddress, ActorStatus.UNREACHABLE, addr, None)
     test_actor.config.mailbox.put_nowait((msg, addr))
+    msg = nconfig.props['signal_queue'].get(timeout=30)
     msg = GetChildStatus(nconfig.myAddress, addr, None)
     msg = Broadcast(msg, addr, None)
+    test_actor.config.mailbox.put_nowait((msg, addr))
+    msg = test_actor.config.props['signal_queue'].get(timeout=30)
+    assert (type(msg) is ActorStatus)
+    assert (msg == ActorStatus.UNREACHABLE)
     msg = nconfig.props['signal_queue'].get(timeout=30)
-    assert(type(msg) is ActorStatus)
-    assert(msg == ActorStatus.UNREACHABLE)
+    assert(msg is None)
 
 @pytest.mark.order9
 def test_stop_actor(test_actor):
