@@ -18,7 +18,7 @@ import atexit
 import multiprocessing
 from copy import deepcopy
 from enum import Enum
-from multiprocessing import Process
+from multiprocessing import Manager
 from multiprocessing import Queue
 
 from gevent import monkey
@@ -62,7 +62,7 @@ class ActorConfig(object):
     work_pool_type = WorkPoolType.ASNYCIO
     max_workers = 100
     security_config = SocketServerSecurity()
-    mailbox = Queue()
+    mailbox = None
     myAddress = None
     convention_leader = None
     props = {}
@@ -112,7 +112,6 @@ class BaseActor(object):
             self.__work_pool = MultiProcPool(
                 max_workers=max_workers)
         atexit.register(self._cleanup)
-        Process.__init__(self)
 
     def get_system_address(self):
         """
