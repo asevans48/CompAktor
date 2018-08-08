@@ -173,6 +173,7 @@ def test_actor():
     mgr = Manager()
     q = mgr.Queue()
     ev = Event()
+    config = ActorConfig()
     config.host = ''
     config.port = 12000
     config.mailbox = mgr.Queue()
@@ -203,8 +204,7 @@ def test_actor_setup(test_actor):
 @pytest.mark.order2
 def test_actor_start(test_actor):
     test_actor.start()
-    ev.wait(timeout=30)
-    msg = q.get(timeout=5)
+    msg = test_actor.props['signal_queue'].get(timeout=5)
     assert(msg is not None)
     assert(type(msg) is POISONPILL)
 
