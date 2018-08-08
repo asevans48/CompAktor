@@ -10,7 +10,7 @@ from atomos.atomic import AtomicLong
 CURRENT_ADDRESS_NUM = AtomicLong()
 
 
-class ActorAddress():
+class ActorAddress(object):
     """
     The ActorAddress object
     """

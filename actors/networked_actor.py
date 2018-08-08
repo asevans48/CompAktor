@@ -90,7 +90,7 @@ class NetworkedActor(Process, BaseActor):
         """
         self.__stop()
 
-    def start(self):
+    def run(self):
         """
         Start the networked actor.
         :return:

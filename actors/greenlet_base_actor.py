@@ -87,14 +87,25 @@ class GreenletBaseActor(Greenlet, BaseActor):
             logging.log_error(logger, message)
 
     def __stop(self):
+        """
+        Stops the actor. Do not override
+        :return:
+        """
         self.evt.set()
         self.running = False
+
+    def _post_start(self):
+        """
+        Can be overriden.  Called in the run function
+        """
+        pass
 
     def run_loop(self, evt):
         """
         Run the gevent loop
         """
         self.running = True
+        self._post_start()
         while self.running:
             message, sender = self.config.mailbox.get()
             if message == POISONPILL:

@@ -199,18 +199,7 @@ class BaseActor(object):
             logger = logging.get_logger()
             message = logging.package_error_message(self.address)
             logging.log_error(logger, message)
-        try:
-            if self._system_address:
-                message = SetActorStatus(
-                    self.config.myAddress,
-                    ActorStatus.STOPPED,
-                    self._system_address,
-                    self.config.myAddress)
-                self.send(self._system_address, message)
-        except Exception as e:
-            logger = logging.get_logger()
-            message = logging.package_error_message(self.address)
-            logging.log_error(logger, message)
+
 
     def __create_actor(self, message, sender):
         """

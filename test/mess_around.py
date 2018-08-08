@@ -1,44 +1,62 @@
-from random import randint
-
-import gevent
-import socket
-
-from actors.address.addressing import ActorAddress
-from messages.utils import get_object_from_message
-from networking.socket_server import create_socket_server, SocketServerSecurity
-from networking.utils import package_message
-from test.modules.message import TestMessage
-
-HOST = '127.0.0.1'
-PORT = 12000
+import random
+from multiprocessing import Process, Queue, Manager
+from time import sleep
 
 
-def send_to_server(inum):
-    to = randint(0,1)
-    gevent.sleep(to)
-    addr = ActorAddress('test{}'.format(inum), HOST, PORT)
-    sec = SocketServerSecurity()
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        sock.connect((HOST, PORT))
-        msg = TestMessage()
-        msg.test_int = inum
-        message = package_message(msg, addr, sec)
-        sock.send(message)
-    finally:
-        sock.close()
+
+class OutMe(object):
+
+    def __init__(self, q):
+        self.q = q
+
+    def do_put(self):
+        self.q.put("Received")
+
+    def rec(self):
+        pass
+
+
+class QMe(OutMe):
+
+    def __init__(self, q, iq):
+        self.q = q
+        self.iq = iq
+        OutMe.__init__(self, q)
+
+    def rec(self):
+        msg = self.iq.get(timeout=20)
+        return msg
+
+    def run(self):
+        pass
+
+
+class MProc(Process, QMe):
+
+    def __init__(self, queue, oqueue):
+        self.queue = queue
+        self.oqueue = oqueue.get('oq')
+        print(self.queue)
+        Process.__init__(self)
+        QMe.__init__(self, self.oqueue, self.queue)
+
+    def run(self):
+        while True:
+            msg = self.rec()
+            print(msg)
+            self.do_put()
 
 
 if __name__ == "__main__":
-    pl = gevent.pool.Pool()
-    server = create_socket_server(HOST, PORT, 2)
-    print(server.is_alive())
-    print(server.signal_queue.get(timeout=30))
-    jobs = []
-    for i in range(0, 10):
-        jobs.append(gevent.spawn(send_to_server, i))
-    gevent.joinall(jobs)
-    for i in range(0, len(jobs)):
-        msg = server.message_queue.get(timeout=30)
-        print(get_object_from_message(msg).test_int)
-
+    mgr = Manager()
+    mgr2 = Manager()
+    mq = mgr.Queue()
+    print(mq)
+    oq = {'oq': mgr2.Queue()}
+    mp = MProc(mq, oq)
+    mp.start()
+    while True:
+        mq.put('Put')
+        sleep(random.randint(0,3))
+        print('Hello')
+        print(oq.get('oq').get())
