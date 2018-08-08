@@ -5,7 +5,6 @@ Implements base actor with each actor running in a new process.
 """
 import atexit
 import multiprocessing
-import traceback
 from copy import deepcopy
 from multiprocessing import Process, Manager
 
@@ -391,8 +390,6 @@ class MultiprocessBaseActor(object):
         :param sender:  The sender
         :type sender:  ActorAddress
         """
-        self.fsock.write("CREATING AN ACTOR\n")
-        self.fsock.flush()
         try:
             actor_class = message.actor_class
             actor_config = message.actor_config
@@ -408,17 +405,13 @@ class MultiprocessBaseActor(object):
             self._child_registry.add_actor(
                 actor.config.myAddress,
                 ActorStatus.RUNNING,
-                mbox,
+                actor.config.mailbox,
                 actor_proc=actor,
                 parent=actor_parent)
-            self.fsock.write('ACTOR CREATED \n')
-            self.fsock.flush()
         except Exception as e:
-            self.fsock.write(traceback.format_exc())
             logger = logging.get_logger()
             message = package_error_message(self.address)
             logging.log_error(logger, message)
-        self.fsock.flush()
 
     def _handle_register_global_actor(self, message, sender):
         """
@@ -520,8 +513,6 @@ class MultiprocessBaseActor(object):
 
         while self.running:
             message, sender = self.config.mailbox.get()
-            self.fsock.write(str(message) + '\n')
-            self.fsock.flush()
             addr = self.address.__repr__()
             if type(message) is POISONPILL:
                 self.running = False
@@ -544,8 +535,6 @@ class MultiprocessBaseActor(object):
         :param sender:  The sender of the message
         :type sender:  ActorAdddress
         """
-        self.fsock.write("RECEIVED "+str(message) + '\n')
-        self.fsock.flush()
         fwd = self._forward_as_needed(message, sender)
         if fwd is False:
             try:
@@ -558,8 +547,6 @@ class MultiprocessBaseActor(object):
                 elif type(message) is Forward:
                     return self._handle_forward(message, sender)
                 elif type(message) is CreateActor:
-                    self.fsock.write('CREATING ACTOR \n')
-                    self.fsock.flush()
                     self._handle_create_actor(message, sender)
                 elif type(message) is UnRegisterGlobalActor:
                     self._handle_unregister_global_actor(message, sender)
