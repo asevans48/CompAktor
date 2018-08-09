@@ -153,6 +153,12 @@ class MultiprocessBaseActor(object):
             logger = logging.get_logger()
             message = logging.package_error_message(self.address)
             logging.log_error(logger, message)
+        try:
+            self.__manager.shutdown()
+        except Exception as e:
+            logger = logging.get_logger()
+            message = logging.package_error_message(self.address)
+            logging.log_error(logger, message)
 
     def _setup(self):
         """
@@ -509,7 +515,7 @@ class MultiprocessBaseActor(object):
         """
         self.running = True
         self._post_start()
-
+        self.fsock.write('DONE WITH POST START\n')
         while self.running:
             message, sender = self.config.mailbox.get()
             addr = self.address.__repr__()

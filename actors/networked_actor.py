@@ -9,6 +9,8 @@ import multiprocessing
 from copy import deepcopy
 from multiprocessing import Queue, Manager
 
+from gevent import monkey
+
 from actors.address.addressing import get_address
 from actors.base_actor import BaseActor, WorkPoolType
 from logging_handler import logging
@@ -16,10 +18,10 @@ from logging_handler.logging import package_error_message
 from messages.actor_maintenance import CreateActor, UnRegisterGlobalActor, RegisterGlobalActor, RemoveActor, \
     SetActorStatus, StopActor, GetActorStatus, ActorStatusResponse, ActorState
 from messages.base import BaseMessage
+from messages.poison import POISONPILL
 from messages.routing import Broadcast, Tell, Ask, Forward, ReturnMessage
-from messages.utils import unpack_message
 from networking.communication import send_message
-from networking.socket_server import SocketServerSecurity, SocketServer
+from networking.socket_server import SocketServerSecurity, create_socket_server
 from networking.utils import package_message
 from pools.asyncio_work_pool import AsyncioWorkPool
 from pools.greenlet_pool import GreenletPool
@@ -61,21 +63,22 @@ class NetworkedBaseActor(object):
         :param registry:  The registry for forwarding a message
         :type registry:  dict
         """
-        self.socket_server =  SocketServer(host,
+        monkey.patch_all()
+        self.socket_server =  create_socket_server(
+            host,
             port,
             max_threads,
             signal_queue,
             message_queue,
             security,
-            message_handler=self.__handle_new_message)
+            self.handle_message)
         self.__manager = Manager()
         self.state = ActorStatus.SETUP
         self._global_actors = {}
         self.config = actor_config
         self.config = actor_config
         if self.config.mailbox is None:
-            mbox = self.__manager.Queue()
-            self.config.mailbox = mbox
+            self.config.mailbox = message_queue
         self._system_address = system_address
         self._parent = parent
         self.address = self.config.myAddress
@@ -100,6 +103,8 @@ class NetworkedBaseActor(object):
             self.__work_pool = MultiProcPool(
                 max_workers=max_workers)
         atexit.register(self._cleanup)
+        self.running = False
+        self.fsock = None
 
     def get_system_address(self):
         """
@@ -187,20 +192,6 @@ class NetworkedBaseActor(object):
             message = logging.package_error_message(self.address)
             logging.log_error(logger, message)
 
-    def __handle_new_message(self, message):
-        """
-        Handle the receipt of a new message.  The networked receive
-
-        :param message:  The message to handle
-        :type message:  BaseMessage
-        """
-        try:
-            message, sender = unpack_message(message)
-            self._receive(message, sender)
-        except Exception as e:
-            message = package_error_message(self.address)
-            logger = logging.get_logger()
-            logging.log_error(logger, message)
     def __create_actor(self, message, sender):
         """
         Creates an actor and sets the actors parent to current actors
@@ -267,6 +258,7 @@ class NetworkedBaseActor(object):
         Stop this actor.  Requires stopping the underling  server.
         """
         self.socket_server.evt.set()
+        self.running = False
 
     def __handle_stop_actor(self, message, sender):
         """
@@ -522,6 +514,8 @@ class NetworkedBaseActor(object):
         :type sender:  ActorAddress
         """
         self.__stop()
+        if self.socket_server:
+            self.socket_server._stop_server(timeout=30)
         self.state = ActorStatus.STOPPED
 
     def _handle_get_actor_status(self, message, sender):
@@ -582,3 +576,46 @@ class NetworkedBaseActor(object):
                 logging.log_error(logger, message)
         elif self._global_actors.get(message.target.address, None):
             self._forward_message(message, sender)
+
+    def handle_message(self, message, sender):
+        """
+        Basic default message handler. Wondering if we can forward
+        concurrently and place on mailbox otherwise.
+
+        :param message:  The message to handle
+        :type message:  BaseMessage
+        :param sender:  The message sender
+        :type sender:  ActorAddress
+        """
+        fwd = self._forward_as_needed()
+        if fwd is False:
+            self.config.mailbox.put_nowait(message)
+
+    def _loop(self):
+        """"
+        Run the actor.  Continues to receive until a poisson pill is obtained
+        """
+        self.fsock.write('STARTING\n')
+        self.fsock.flush()
+        self.running = True
+        self.fsock.write(str(self._post_start))
+        self.fsock.flush()
+        self._post_start()
+        self.fsock.write('Finished Setup\n')
+        self.fsock.flush()
+        while self.running:
+            self.fsock.write('Looping\n')
+            self.fsock.flush()
+            message, sender = self.config.mailbox.get()
+            addr = self.address.__repr__()
+            if type(message) is POISONPILL:
+                self.running = False
+            else:
+                try:
+                    self._receive(message, sender)
+                except Exception as e:
+                    logger = logging.get_logger()
+                    message = package_error_message(self.address)
+                    logging.log_error(logger, message)
+        self._post_stop()
+        self.__stop_children()

@@ -364,3 +364,21 @@ def test_stop_actor(test_actor):
     assert(type(msg) is ActorStopped)
     test_actor.terminate()
     test_actor.join(timeout=10)
+
+
+if __name__ == "__main__":
+    with Manager() as mgr:
+        ev = Event()
+        q = mgr.Queue()
+        sq = mgr.Queue()
+        config = ActorConfig()
+        config.host = '127.0.0.1'
+        config.port = 12000
+        config.mailbox = Queue()
+        config.work_pool_type = WorkPoolType.GREENLET
+        config.props = {'signal_queue': q, 'event': ev}
+        print(config.mailbox)
+        test_actor = TestActor(config,
+                               None)
+        test_actor.start()
+        test_stop_actor(test_actor)

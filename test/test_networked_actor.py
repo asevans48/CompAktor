@@ -3,22 +3,28 @@ Test the multiprocessing actor.
 
 @author aevans
 """
+import atexit
+import traceback
+
+import gevent
 import sys
-from multiprocessing import Manager, Queue, Event, Process
+from multiprocessing import Manager, Event, Process
 
 import pytest
 
-from actors.address.addressing import ActorAddress, get_address
+from actors.address.addressing import ActorAddress
 from actors.base_actor import ActorConfig, WorkPoolType
 from actors.multiprocess_actor import MultiprocessBaseActor
-from actors.networked_actor import NetworkedBaseActor
-from messages.actor_maintenance import StopActor, ActorStopped, CreateActor, RemoveActor, SetActorStatus
+from messages.actor_maintenance import StopActor, ActorStopped
 from messages.base import BaseMessage
 from messages.poison import POISONPILL
-from messages.routing import Forward, Broadcast
+from networking.communication import send_message
+from networking.socket_server import SocketServerSecurity, create_socket_server
 from registry.registry import ActorStatus
 
 ACTORSTARTED = object()
+HOST = '127.0.0.1'
+PORT = 12000
 
 
 class ActorChildren(BaseMessage):
@@ -49,19 +55,36 @@ class GetChildStatus(BaseMessage):
 
 class TestActor2(Process, MultiprocessBaseActor):
 
-    def __init__(self, actor_config, system_address, parent=[]):
+    def __init__(self,
+                 actor_config,
+                 system_address,
+                 host,
+                 port,
+                 parent,
+                 max_threads,
+                 signal_queue,
+                 message_queue,
+                 security=SocketServerSecurity()):
+        self.signal_queue = signal_queue
+        actor_config.mailbox = message_queue
         Process.__init__(self)
-        mgr = Manager()
-        actor_config.mailbox = mgr.Queue()
-        MultiprocessBaseActor.__init__(self, actor_config, system_address, parent)
-        self.mailbox = actor_config.mailbox
-        self.signal_queue = actor_config.props['signal_queue']
-        self.event = actor_config.props['event']
+        MultiprocessBaseActor.__init__(actor_config, actor_config.myAddress)
+        self.server = create_socket_server(
+                host,
+                port,
+                max_threads,
+                signal_queue,
+                message_queue,
+                security,
+                message_handler=None)
+        print(self.server)
+        self.fsock = None
 
     def _post_start(self):
-        self.signal_queue.put_nowait(ACTORSTARTED)
+        self.fsock.write('STARTED')
 
     def _post_stop(self):
+        self.server.stop_server()
         msg = ActorStopped(ActorStatus.STOPPED, None, self.config.myAddress)
         self.signal_queue.empty()
         self.signal_queue.put_nowait(msg)
@@ -96,7 +119,7 @@ class TestActor2(Process, MultiprocessBaseActor):
 
 
     def run(self):
-        self.fsock = open('/home/aevans/Documents/test/multitest3.txt', 'w')
+        self.fsock = open('/home/aevans/Documents/test/multitest3.txt', 'a')
         sys.stdout = self.fsock
         sys.stderr = self.fsock
         self.fsock.write('STARTING ACTOR \n')
@@ -108,21 +131,34 @@ class TestActor2(Process, MultiprocessBaseActor):
             self.fsock.close()
 
 
-class TestActor(Process, NetworkedBaseActor):
+class TestActor(Process, MultiprocessBaseActor):
 
-    def __init__(self, actor_config, system_address, parent=[]):
+    def __init__(self,
+                 actor_config,
+                 system_address,
+                 host,
+                 port,
+                 parent,
+                 max_threads,
+                 signal_queue,
+                 message_queue,
+                 security=SocketServerSecurity()):
+        self.host = host
+        self.port = port
+        self.__security = security
+        actor_config.mailbox = message_queue
+        self.signal_queue = signal_queue
         Process.__init__(self)
-        mgr = Manager()
-        actor_config.mailbox = mgr.Queue()
-        MultiprocessBaseActor.__init__(self, actor_config, system_address, parent)
-        self.mailbox = actor_config.mailbox
-        self.signal_queue = actor_config.props['signal_queue']
-        self.event = actor_config.props['event']
+        MultiprocessBaseActor.__init__(self, actor_config, actor_config.myAddress)
+        self.server = None
+        self.server_thread = None
+        self.fsock = None
 
     def _post_start(self):
-        self.signal_queue.put_nowait(ACTORSTARTED)
+        self.fsock.write('STARTED')
 
     def _post_stop(self):
+        self.server.stop_server()
         msg = ActorStopped(ActorStatus.STOPPED, None, self.config.myAddress)
         self.signal_queue.empty()
         self.signal_queue.put_nowait(msg)
@@ -155,14 +191,44 @@ class TestActor(Process, NetworkedBaseActor):
         elif type(message) is GetChildStatus:
             self.__handle_get_child_status(message, sender)
 
+    def setup_server(self):
+        self.server = create_socket_server(
+            self.host,
+            self.port,
+            max_threads,
+            signal_queue,
+            message_queue,
+            self.__security,
+            message_handler=None)
+        self.fsock.write(str(self.server.signal_queue.get(timeout=30)))
+        self.fsock.flush()
 
     def run(self):
         self.fsock = open('/home/aevans/Documents/test/multitest2.txt', 'a')
         sys.stdout = self.fsock
         sys.stderr = self.fsock
         self.fsock.write('STARTING ACTOR \n')
+        self.fsock.flush()
+
+        self.fsock.write('STARTING SERVER')
+        self.__setup_server()
+        self.fsock.write('SERVER STARTED')
+
         try:
+            self.server_thread = gevent.spawn(self.server.run)
+            self.server_thread.start()
+            self.fsock.write('STARTING SERVER\n')
+            self.fsock.flush()
+            self.fsock.write(str(self.server.signal_queue.get(timeout=2)))
+            self.fsock.flush()
+            self.fsock.write('STARTED SERVER\n')
+            self.fsock.flush()
+            atexit.register(self.server_thread.kill)
+            self.server_thread.start()
             self._loop()
+        except Exception as e:
+            self.fsock.write(traceback.format_exc())
+            self.fsock.flush()
         finally:
             self.fsock.flush()
             self.fsock.close()
@@ -196,15 +262,15 @@ def test_actor_setup(test_actor):
     :type test_actor:  TestActor
     """
     assert (type(test_actor) is TestActor)
-    assert (test_actor.config.host == '')
+    assert (test_actor.config.host == '127.0.0.1')
     assert (test_actor.config.port == 12000)
-    assert (type(test_actor.config.mailbox) is Queue)
 
 
 @pytest.mark.order2
 def test_actor_start(test_actor):
     test_actor.start()
     msg = test_actor.props['signal_queue'].get(timeout=5)
+    print(msg)
     assert(msg is not None)
     assert(type(msg) is POISONPILL)
 
@@ -219,9 +285,9 @@ def test_actor_non_default_message(test_actor):
     """
     msg = TestPingPongMessage(test_actor.config.myAddress, None)
     addr = test_actor.config.myAddress
-    test_actor.config.mailbox.put_nowait((msg, addr))
-    msg = test_actor.signal_queue.get(timeout=30)
-    assert(type(msg) is TestPingPongMessage)
+    sec = test_actor.config.props['sec']
+    send_message(msg, None, test_actor.address, sec)
+    print(test_actor.config.props['signal_queue'].get(timeout=30))
 
 
 @pytest.mark.order4
@@ -232,118 +298,50 @@ def test_create_actor(test_actor):
     :param test_actor:  The test actor
     :type test_actor:  TestActor
     """
-    addr = test_actor.config.myAddress
-    nconfig = ActorConfig()
-    nconfig.host = ''
-    nconfig.port = 12000
-    nconfig.mailbox = Manager().Queue()
-    nconfig.work_pool_type = WorkPoolType.GREENLET
-    nconfig.props = {'signal_queue': Manager().Queue(), 'event': Manager().Event()}
-    msg = CreateActor(TestActor2, nconfig, [], test_actor.address, None)
-    test_actor.mailbox.put((msg, addr))
-    #print(sq.get(timeout=10))
-    msg = GetChildren(addr, None)
-    test_actor.mailbox.put((msg, addr))
-    #test_actor.signal_queue.put('Yo')
-    msg = test_actor.signal_queue.get(timeout=30)
-    assert(len(msg.children)  == 1)
-
+    pass
 
 @pytest.mark.order5
 def test_forward_to_child(test_actor):
-    config = test_actor.config
-    addr = test_actor.address
-    nconfig = ActorConfig()
-    nconfig.host = ''
-    nconfig.port = 12000
-    nconfig.mailbox = Manager().Queue()
-    nconfig.myAddress = get_address(nconfig.host, nconfig.port)
-    nconfig.work_pool_type = WorkPoolType.GREENLET
-    nconfig.props = {'signal_queue': Manager().Queue(), 'event': Manager().Event()}
-    msg = CreateActor(TestActor2, nconfig, [], config.myAddress, None)
-    test_actor.config.mailbox.put((msg, addr))
-    msg = GetChildren(nconfig.myAddress.address, None)
-    chain = [nconfig.myAddress.address, ]
-    msg = Forward(msg, chain, nconfig.myAddress, None)
-    test_actor.config.mailbox.put((msg, addr))
-    msg = nconfig.props['signal_queue'].get(timeout=30)
-    msg = nconfig.props['signal_queue'].get(timeout=30)
-    assert (len(list(msg.children)) == 0)
-    assert (msg.sender.__eq__(nconfig.myAddress))
+    """
+    Test forwarding to an actor
+
+    :param test_actor:  The test actor
+    :type test_actor:  TestActor
+    """
+    pass
 
 
 @pytest.mark.order6
 def test_remove_actor(test_actor):
-    config = test_actor.config
-    addr = test_actor.config.myAddress
-    nconfig = ActorConfig()
-    nconfig.host = ''
-    nconfig.port = 12000
-    nconfig.mailbox = Manager().Queue()
-    nconfig.myAddress = get_address(nconfig.host, nconfig.port)
-    nconfig.work_pool_type = WorkPoolType.GREENLET
-    nconfig.props = {'signal_queue': Manager().Queue(), 'event': Manager().Event()}
-    msg = CreateActor(TestActor, nconfig, [], config.myAddress, None)
-    test_actor.config.mailbox.put((msg, addr))
-    msg = GetChildren(addr, None)
-    test_actor.config.mailbox.put((msg, addr))
-    msg = test_actor.signal_queue.get(timeout=30)
-    assert (type(msg) is ActorChildren)
-    assert (nconfig.myAddress.address in list(msg.children))
-    msg = RemoveActor(nconfig.myAddress, test_actor.address, None)
-    test_actor.config.mailbox.put_nowait((msg, None))
-    msg = GetChildren(addr, None)
-    test_actor.config.mailbox.put((msg, addr))
-    msg = test_actor.signal_queue.get(timeout=30)
-    assert (nconfig.myAddress.address not in list(msg.children))
+    """
+    Test removing a child actor
+
+    :param test_actor:  The test actor
+    :type test_actor:  TestActor
+    """
+    pass
 
 
 @pytest.mark.order7
 def test_set_actor_status(test_actor):
-    config = test_actor.config
-    addr = test_actor.config.myAddress
-    nconfig = ActorConfig()
-    nconfig.host = ''
-    nconfig.port = 12000
-    nconfig.mailbox = Manager().Queue()
-    nconfig.myAddress = get_address(nconfig.host, nconfig.port)
-    nconfig.work_pool_type = WorkPoolType.GREENLET
-    nconfig.props = {'signal_queue': Manager().Queue(), 'event': Manager().Event()}
-    msg = CreateActor(TestActor, nconfig, [], config.myAddress, None)
-    test_actor.config.mailbox.put((msg, addr))
-    msg = SetActorStatus(
-        nconfig.myAddress, ActorStatus.UNREACHABLE, addr, None)
-    test_actor.config.mailbox.put_nowait((msg, addr))
-    msg = GetChildStatus(nconfig.myAddress, addr, None)
-    test_actor.config.mailbox.put_nowait((msg, addr))
-    msg = test_actor.config.props['signal_queue'].get(timeout=30)
-    assert(type(msg) is ActorStatus)
-    assert(msg == ActorStatus.UNREACHABLE)
+    """
+    Test set the actor status
+
+    :param test_actor:  The test actor
+    :type test_actor:  TestActor
+    """
+    pass
+
 
 @pytest.mark.order8
 def test_broadcast(test_actor):
-    addr = test_actor.config.myAddress
-    nconfig = ActorConfig()
-    nconfig.host = ''
-    nconfig.port = 12000
-    nconfig.myAddress = get_address(nconfig.host, nconfig.port)
-    nconfig.mailbox = Manager().Queue()
-    nconfig.work_pool_type = WorkPoolType.GREENLET
-    nconfig.props = {'signal_queue': Manager().Queue(), 'event': Manager().Event()}
-    msg = CreateActor(TestActor2, nconfig, [], test_actor.address, None)
-    test_actor.mailbox.put((msg, addr))
-    msg = nconfig.props['signal_queue'].get(timeout=30)
-    msg = SetActorStatus(
-        nconfig.myAddress, ActorStatus.UNREACHABLE, addr, None)
-    test_actor.config.mailbox.put_nowait((msg, addr))
-    msg = GetChildStatus(nconfig.myAddress, addr, None)
-    msg = Broadcast(msg, addr, None)
-    test_actor.config.mailbox.put_nowait((msg, addr))
-    msg = test_actor.config.props['signal_queue'].get(timeout=30)
-    assert (type(msg) is ActorStatus)
-    assert (msg == ActorStatus.UNREACHABLE)
-    msg = nconfig.props['signal_queue'].get(timeout=30)
-    assert(msg is None)
+    """
+    Test broadcast to an actor
+
+    :param test_actor:  The test actor
+    :type test_actor:  TestActor
+    """
+    pass
 
 
 @pytest.mark.order9
@@ -355,6 +353,8 @@ def test_stop_actor(test_actor):
     :type test_actor:  TestActor
     """
     msg = StopActor(test_actor.address, None)
+    print(test_actor.config.__dict__)
+    print(test_actor.config.mailbox.empty())
     test_actor.config.mailbox.put_nowait((msg, test_actor.config.myAddress))
     msg = test_actor.signal_queue.get(timeout=30)
     while test_actor.config.mailbox.empty() is False:
@@ -364,3 +364,35 @@ def test_stop_actor(test_actor):
     assert(type(msg) is ActorStopped)
     test_actor.terminate()
     test_actor.join(timeout=10)
+
+
+if __name__ == "__main__":
+    mgr = Manager()
+    mgr2 = Manager()
+    ev = Event()
+    q = mgr.Queue()
+    sq = mgr2.Queue()
+    config = ActorConfig()
+    config.host = '127.0.0.1'
+    config.port = 12000
+    config.mailbox = mgr.Queue()
+    config.work_pool_type = WorkPoolType.GREENLET
+    config.props = {'signal_queue': q, 'event': ev}
+    parent = []
+    max_threads = 1000
+    signal_queue = q
+    message_queue = config.mailbox
+    sec = SocketServerSecurity()
+    test_actor = TestActor(config,
+                           None,
+                           HOST,
+                           PORT,
+                           parent,
+                           max_threads,
+                           signal_queue,
+                           message_queue,
+                           sec)
+    test_actor_setup(test_actor)
+    test_actor.start()
+    print(test_actor.signal_queue.get(timeout=30))
+    test_stop_actor(test_actor)

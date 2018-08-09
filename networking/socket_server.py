@@ -10,17 +10,18 @@ import hashlib
 import hmac
 import json
 from multiprocessing import Queue
+from threading import Thread
 
 import gevent
-from gevent import signal
+from gevent import signal, monkey
 from gevent.event import Event
 from gevent.pool import Pool
 from gevent.server import StreamServer
 
 from logging_handler import logging
 
-
-#monkey.patch_all()
+#monkey.patch_all(socket=False)
+monkey.patch_queue()
 
 
 class LengthStringRequiredException(object):
@@ -62,7 +63,7 @@ class SocketServerSecurity(object):
         return self.__magic
 
 
-class SocketServer(object):
+class SocketServer(Thread):
     """
     The socket server which extends Thread.
     """
@@ -94,12 +95,13 @@ class SocketServer(object):
         :param message_handler:  A message handler for the socket server
         :type message_handler:
         """
+        Thread.__init__(self)
         self.__security = security
         self.is_running = False
         self.__server = None
         self.host = host
         self.port = port
-        self.evt = Event()
+        self.stop_evt = Event()
         self.signal_queue = signal_queue
         self.message_queue = message_queue
         self._socket_timeout = 10
@@ -176,7 +178,7 @@ class SocketServer(object):
         Stop a running server.  Sets the event
         """
         try:
-            self.evt.set()
+            self.stop_evt.set()
         except Exception as e:
             self.signal_queue.put(e)
 
@@ -206,9 +208,9 @@ class SocketServer(object):
         """
         Setup handlers for termination
         """
-        gevent.signal(signal.SIGQUIT, self.evt.set)
-        gevent.signal(signal.SIGTERM, self.evt.set)
-        gevent.signal(signal.SIGINT, self.evt.set)
+        gevent.signal(signal.SIGQUIT, self.stop_evt.set)
+        gevent.signal(signal.SIGTERM, self.stop_evt.set)
+        gevent.signal(signal.SIGINT, self.stop_evt.set)
         atexit.register(self._stop_server)
 
     def run(self):
@@ -222,6 +224,7 @@ class SocketServer(object):
         try:
             def handle_connect(socket, address):
                 self.handle_socket(socket, address)
+
             pool = Pool(self.__max_threads)
             if self.__security.keyfile and self.__security.certfile:
                 self.__server = StreamServer(
@@ -239,15 +242,22 @@ class SocketServer(object):
             self._setup_termination()
             self.is_running = True
             self.signal_queue.put(ServerStarted())
-            self.__server.evt.wait()
-            self.stop_server(10)
+            self.stop_evt.wait()
+            self._stop_server(10)
         except Exception as e:
             self.signal_queue.put(e)
         finally:
             self.signal_queue.put(ServerStopped())
 
 
-def create_socket_server(host, port, max_threads=1000, security_config=SocketServerSecurity()):
+def create_socket_server(
+            host,
+            port,
+            max_threads=1000,
+            signal_queue=Queue(),
+            message_queue=Queue(),
+            security_config=SocketServerSecurity(),
+            message_handler=None):
     """
     Get the gevent thread containing the running server
 
@@ -261,6 +271,13 @@ def create_socket_server(host, port, max_threads=1000, security_config=SocketSer
     :type security_config:  SocketServerSecurity
     :return:  threading.Thread
     """
-    server = SocketServer(host, port, max_threads, security=security_config)
+    server = SocketServer(
+            host,
+            port,
+            max_threads,
+            signal_queue,
+            message_queue,
+            security_config,
+            message_handler)
     server.start()
     return server

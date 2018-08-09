@@ -15,11 +15,11 @@ HOST = '127.0.0.1'
 PORT = 12000
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def socket_server():
     server = create_socket_server(HOST, PORT, 2)
     server.signal_queue.get(timeout=30)
-    return server
+    yield server
 
 
 @pytest.fixture
