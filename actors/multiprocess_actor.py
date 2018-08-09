@@ -76,7 +76,6 @@ class MultiprocessBaseActor(object):
             self.__work_pool = MultiProcPool(
                 max_workers=max_workers)
         atexit.register(self._cleanup)
-        self.fsock = None
         Process.__init__(self)
 
     def get_system_address(self):
